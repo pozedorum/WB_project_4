@@ -1,10 +1,10 @@
-package testtask
+package main
 
 import (
 	"fmt"
 	"time"
 
-	"github.com/pozedorum/WB_project_4/or"
+	"github.com/pozedorum/WB_project_4/task1/or"
 )
 
 func main() {
