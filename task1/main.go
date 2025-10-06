@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pozedorum/WB_project_4/task1/or"
+	"github.com/pozedorum/or"
 )
 
 func main() {
