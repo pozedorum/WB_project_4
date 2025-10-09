@@ -17,7 +17,7 @@ type FlagStruct struct {
 	VFlag          *bool
 	FFlag          *bool
 	NFlag          *bool
-	ConcurrentMode *bool
+	ConcurrentMode *int
 	Pattern        string
 }
 
@@ -36,7 +36,7 @@ func ParseOptions() (*FlagStruct, []string) {
 	ePattern := flag.StringP("e", "e", "", "Pattern to search for")
 
 	// 	ФЛАГ ВКЛЮЧЕНИЯ РАСПРЕДЕЛЁННОЙ ВЕРСИИ УТИЛИТЫ
-	fs.ConcurrentMode = flag.BoolP("Q", "Q", false, "Turn on concurrent mode")
+	fs.ConcurrentMode = flag.IntP("Q", "Q", 0, "Turn on concurrent mode and set workers count")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] -e PATTERN [FILE...]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s [OPTIONS] PATTERN [FILE...]\n", os.Args[0])
