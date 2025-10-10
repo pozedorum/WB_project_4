@@ -56,7 +56,6 @@ func ParseOptions() (*FlagStruct, []string) {
 		fs.Pattern = args[0]
 		args = args[1:]
 	}
-
 	return &fs, args
 }
 
@@ -69,4 +68,14 @@ func (fs *FlagStruct) PrintFlags() {
 	fmt.Println("flag v -", *(fs.VFlag))
 	fmt.Println("flag F -", *(fs.FFlag))
 	fmt.Println("flag i -", *(fs.IFlag))
+}
+
+func (fs *FlagStruct) Validate() error {
+	if fs.Pattern == "" {
+		return fmt.Errorf("pattern cannot be empty")
+	}
+	if *fs.AFlag < 0 || *fs.BFlag < 0 || *fs.CFlag < 0 {
+		return fmt.Errorf("context flags cannot be negative")
+	}
+	return nil
 }

@@ -120,25 +120,23 @@ func (m *Master) resultCollector() {
 
 // progressDisplay отображает и обновляет полосу прогресса
 func (m *Master) progressDisplay() {
+	if m.totalTasks == 0 {
+		fmt.Println("No tasks to process")
+		return
+	}
+
 	lastPercent := -1
-
 	for completed := range m.progressChan {
-		if m.totalTasks == 0 {
-			continue
-		}
-
 		percent := int(float64(completed) / float64(m.totalTasks) * 100)
 
-		// Обновляем только если процент изменился
 		if percent != lastPercent {
 			m.redrawProgressBar(completed, m.totalTasks, percent)
 			lastPercent = percent
 		}
 
-		// Если все задачи завершены, выходим
 		if completed >= m.totalTasks {
 			m.redrawProgressBar(completed, m.totalTasks, 100)
-			fmt.Println() // Переход на новую строку после завершения
+			fmt.Println()
 			return
 		}
 	}

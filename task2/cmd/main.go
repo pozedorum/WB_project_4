@@ -13,7 +13,10 @@ import (
 func main() {
 	fs, fileArgs := options.ParseOptions()
 	if len(fileArgs) <= 0 {
-		fmt.Errorf("grep: no files detected")
+		fmt.Printf("grep: no files detected")
+		return
+	} else if err := fs.Validate(); err != nil {
+		fmt.Printf("grep: %v", err)
 	}
 	if *fs.ConcurrentMode > 0 {
 		// Распределённый режим
@@ -40,7 +43,7 @@ func main() {
 		}
 
 		// Создаем мастера (например, с 4 воркерами)
-		master, err := concurrency.NewMaster(4, fs)
+		master, err := concurrency.NewMaster(*fs.ConcurrentMode, fs)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -59,8 +62,8 @@ func main() {
 
 	} else {
 		// Обработка файла (аргумент - имя файла)
-		for _, file := range fileArgs {
-			file, err := os.Open(file)
+		for _, fileName := range fileArgs {
+			file, err := os.Open(fileName)
 			if err != nil {
 				log.Fatalf("grep: %s: %v", file.Name(), err)
 			}

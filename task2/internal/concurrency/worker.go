@@ -72,7 +72,6 @@ func (w *Worker) processTask(task models.Task) models.Result {
 
 // processGrepChunk обрабатывает чанк с использованием пакета grep
 func (w *Worker) processChunkGrep(reader io.Reader) ([]string, error) {
-	var resultLines []string
 	var outputBuffer strings.Builder
 
 	// Вызываем функцию grep
@@ -81,10 +80,14 @@ func (w *Worker) processChunkGrep(reader io.Reader) ([]string, error) {
 		return nil, fmt.Errorf("grep error: %v", err)
 	}
 
-	// Разбиваем результат на строки
-	if outputBuffer.Len() > 0 {
-		resultLines = strings.Split(strings.TrimSuffix(outputBuffer.String(), "\n"), "\n")
+	if outputBuffer.Len() == 0 {
+		return []string{}, nil
 	}
 
-	return resultLines, nil
+	output := strings.TrimSuffix(outputBuffer.String(), "\n")
+	if output == "" {
+		return []string{}, nil
+	}
+
+	return strings.Split(output, "\n"), nil
 }
