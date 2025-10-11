@@ -2,8 +2,8 @@ package concurrency
 
 import (
 	"fmt"
-	"log"
 	"os"
+	"sync"
 
 	"github.com/pozedorum/WB_project_4/task2/internal/chunks"
 	"github.com/pozedorum/WB_project_4/task2/internal/models"
@@ -14,12 +14,12 @@ type Master struct {
 	workers      []*Worker
 	taskChan     chan models.Task
 	resultChan   chan models.Result
-	quorum       int
 	totalTasks   int
-	resultList   []*models.Result
+	resultMap    map[int]models.Result
 	done         chan bool
 	progressChan chan int
-	taskCounter  int // Счётчик задач для ID
+	taskCounter  int
+	wg           sync.WaitGroup // Добавляем WaitGroup для отслеживания воркеров
 }
 
 const (
@@ -30,19 +30,24 @@ func NewMaster(workersCount int, flags *options.FlagStruct) (*Master, error) {
 	workers := make([]*Worker, 0, workersCount)
 	taskChan := make(chan models.Task, standardChanSize)
 	resultChan := make(chan models.Result, standardChanSize)
-
-	for id := 0; id < workersCount; id++ {
-		newWorker := newWorker(id, taskChan, resultChan, flags)
-		workers = append(workers, newWorker)
-	}
+	resultMap := make(map[int]models.Result, standardChanSize)
 
 	master := &Master{
 		workers:      workers,
 		taskChan:     taskChan,
 		resultChan:   resultChan,
 		done:         make(chan bool),
-		progressChan: make(chan int, 10),
+		progressChan: make(chan int, standardChanSize), // Увеличиваем буфер
 		taskCounter:  0,
+		resultMap:    resultMap,
+	}
+
+	// Создаем и запускаем воркеры
+	for id := 0; id < workersCount; id++ {
+		master.wg.Add(1) // Увеличиваем счетчик для каждого воркера
+		newWorker := newWorker(id, &master.wg, taskChan, resultChan, flags)
+		master.workers = append(master.workers, newWorker)
+
 	}
 
 	// Запускаем сборщик результатов в отдельной горутине
@@ -53,8 +58,6 @@ func NewMaster(workersCount int, flags *options.FlagStruct) (*Master, error) {
 
 // ProcessFilesStreaming - потоковая обработка файлов
 func (m *Master) ProcessFilesStreaming(files []*os.File, operation, pattern string) error {
-	// Запускаем отображение прогресса
-	go m.progressDisplay()
 
 	// Запускаем потоковое создание задач в отдельной горутине
 	go m.createTasksStreaming(files, operation, pattern)
@@ -62,26 +65,28 @@ func (m *Master) ProcessFilesStreaming(files []*os.File, operation, pattern stri
 	// Ждем завершения сбора результатов
 	<-m.done
 
-	log.Printf("Processing completed: %d tasks processed", m.totalTasks)
+	//log.Printf("Processing completed: %d tasks processed", m.totalTasks)
 	return nil
 }
 
 // createTasksStreaming - потоково создает задачи и отправляет в канал
 func (m *Master) createTasksStreaming(files []*os.File, operation, pattern string) {
-	defer close(m.taskChan) // Закрываем канал когда все задачи отправлены
+	defer close(m.taskChan) // Гарантируем закрытие канала задач
 
 	for _, file := range files {
-		log.Printf("Splitting file: %s", file.Name())
+		//log.Printf("Splitting file: %s", file.Name())
 
 		// Разбиваем файл на чанки
 		fileChunks, err := chunks.SplitFiles([]*os.File{file})
 		if err != nil {
-			log.Printf("Error splitting file %s: %v", file.Name(), err)
+			//log.Printf("Error splitting file %s: %v", file.Name(), err)
 			continue
 		}
 
 		// Отправляем чанки в канал задач
 		for _, chunk := range fileChunks {
+			// fmt.Println("chunk start offset ", chunk.StartOffset)
+			// fmt.Println("chunk end offset ", chunk.EndOffset)
 			task := models.Task{
 				ID:        m.taskCounter,
 				Operation: operation,
@@ -89,35 +94,45 @@ func (m *Master) createTasksStreaming(files []*os.File, operation, pattern strin
 				Chunk:     chunk,
 			}
 
-			// Отправляем задачу в канал (блокируется если канал полный)
 			m.taskChan <- task
 			m.taskCounter++
 			m.totalTasks++
 
-			log.Printf("Task %d created for file %s", task.ID, file.Name())
+			//log.Printf("Task %d created for file %s", task.ID, file.Name())
 		}
 	}
-
-	log.Printf("All tasks created: %d total tasks", m.totalTasks)
+	//log.Printf("All tasks created: %d total tasks", m.totalTasks)
 }
 
 // resultCollector собирает результаты из канала
 func (m *Master) resultCollector() {
-	log.Println("Result collector started")
-	defer close(m.progressChan) // Важно закрыть канал прогресса
+	//log.Println("Result collector started")
+
+	// Ждем завершения всех воркеров в отдельной горутине
+	go func() {
+		m.wg.Wait() // Ждем завершения всех воркеров
+		//fmt.Println("closing resultChan")
+		close(m.resultChan) // Закрываем канал результатов
+	}()
 
 	for result := range m.resultChan {
-		m.resultList = append(m.resultList, &result)
-		m.progressChan <- len(m.resultList)
+		m.resultMap[result.ChunkID] = result
+		// Неблокирующая отправка в канал прогресса
+		select {
+		case m.progressChan <- len(m.resultMap):
+		default:
+			// Пропускаем обновление прогресса если канал полный
+		}
 
-		log.Printf("Result collected for task %d from worker %d (lines: %d)",
-			result.TaskID, result.WorkerID, len(result.Lines))
+		//log.Printf("Result collected for task %d from worker %d (lines: %d)",
+		//	result.TaskID, result.WorkerID, len(result.Lines))
 	}
-
 	// Все результаты собраны (канал закрыт)
+	close(m.progressChan)
 	m.done <- true
 }
 
+<<<<<<< Updated upstream
 // progressDisplay отображает и обновляет полосу прогресса
 func (m *Master) progressDisplay() {
 	if m.totalTasks == 0 {
@@ -167,20 +182,19 @@ func (m *Master) GetResults() []*models.Result {
 	return m.resultList
 }
 
+=======
+>>>>>>> Stashed changes
 // MergeResults объединяет все результаты
 func (m *Master) MergeResults() []string {
 	var allLines []string
-	for _, result := range m.resultList {
+	for i := 0; i < m.totalTasks; i++ {
+		result := m.resultMap[i]
 		if result.Error == nil {
 			allLines = append(allLines, result.Lines...)
 		} else {
-			allLines = append(allLines, fmt.Sprintf("error with file %s: %v\n", result.FilePath, result.Error))
+			allLines = append(allLines, fmt.Sprintf("error with file %s: %v", result.FilePath, result.Error))
 		}
+		//fmt.Println(m.resultMap[i].ChunkID)
 	}
 	return allLines
-}
-
-// Close останавливает мастер
-func (m *Master) Close() {
-	close(m.resultChan)
 }

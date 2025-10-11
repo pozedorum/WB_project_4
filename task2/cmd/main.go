@@ -15,8 +15,11 @@ func main() {
 	if len(fileArgs) <= 0 {
 		fmt.Printf("grep: no files detected")
 		return
+<<<<<<< Updated upstream
 	} else if err := fs.Validate(); err != nil {
 		fmt.Printf("grep: %v", err)
+=======
+>>>>>>> Stashed changes
 	}
 	if *fs.ConcurrentMode > 0 {
 		// Распределённый режим
@@ -30,7 +33,7 @@ func main() {
 			for _, filename := range fileArgs {
 				file, err := os.Open(filename)
 				if err != nil {
-					log.Printf("Warning: cannot open %s: %v", filename, err)
+					//log.Printf("Warning: cannot open %s: %v", filename, err)
 					continue
 				}
 				defer file.Close()
@@ -47,7 +50,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer master.Close()
 
 		// Обрабатываем файлы
 		if err := master.ProcessFilesStreaming(files, "grep", fs.Pattern); err != nil {

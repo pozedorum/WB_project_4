@@ -62,26 +62,45 @@ func MakeChunkFromFile(file *os.File, chunkID int, fileSize int64) Chunk {
 }
 
 func SplitBigFile(file *os.File, startChunkID int, fileSize int64) ([]Chunk, int, error) {
-	// Вычисляем количество чанков
 	numChunks := int(fileSize / MaxChunkSize)
 	if fileSize%MaxChunkSize != 0 {
 		numChunks++
 	}
 
 	chunks := make([]Chunk, 0, numChunks)
+	currentOffset := int64(0)
 
 	for i := 0; i < numChunks; i++ {
-		startOffset := int64(i) * MaxChunkSize
+		startOffset := currentOffset
 		endOffset := startOffset + MaxChunkSize
 
 		if endOffset > fileSize {
 			endOffset = fileSize
 		}
 
-		// Корректируем границы до границ строк
-		startOffset = adjustToLineStart(file, startOffset)
-		if i < numChunks-1 { // Для всех чанков кроме последнего
-			endOffset = adjustToLineEnd(file, endOffset, fileSize)
+		// Для всех чанков кроме первого корректируем начало до границы строки
+		if i > 0 {
+			adjustedStart := adjustToLineStart(file, startOffset)
+			// Если корректировка сдвинула начало за пределы конца файла, пропускаем чанк
+			if adjustedStart >= fileSize {
+				break
+			}
+			startOffset = adjustedStart
+		}
+
+		// Для всех чанков кроме последнего корректируем конец до границы строки
+		if i < numChunks-1 && endOffset < fileSize {
+			adjustedEnd := adjustToLineEnd(file, endOffset, fileSize)
+			// Если корректировка вернула ту же позицию, увеличиваем немного
+			if adjustedEnd <= endOffset {
+				adjustedEnd = adjustToLineEnd(file, endOffset+1, fileSize)
+			}
+			endOffset = adjustedEnd
+		}
+
+		// Если чанк пустой, пропускаем
+		if startOffset >= endOffset {
+			break
 		}
 
 		chunk := Chunk{
@@ -94,9 +113,13 @@ func SplitBigFile(file *os.File, startChunkID int, fileSize int64) ([]Chunk, int
 		}
 
 		chunks = append(chunks, chunk)
+		currentOffset = endOffset // Следующий чанк начинается с конца текущего
+
+		// fmt.Printf("Created chunk %d: %d-%d (size: %d)\n",
+		// 	chunk.ChunkID, startOffset, endOffset, endOffset-startOffset)
 	}
 
-	return chunks, numChunks, nil
+	return chunks, len(chunks), nil
 }
 
 // adjustToLineStart - находит начало первой полной строки
@@ -104,6 +127,10 @@ func adjustToLineStart(file *os.File, offset int64) int64 {
 	if offset == 0 {
 		return 0
 	}
+
+	// Сохраняем текущую позицию файла
+	originalPos, _ := file.Seek(0, io.SeekCurrent)
+	defer file.Seek(originalPos, io.SeekStart) // Восстанавливаем позицию
 
 	file.Seek(offset, io.SeekStart)
 	reader := bufio.NewReader(file)
@@ -124,6 +151,10 @@ func adjustToLineEnd(file *os.File, offset int64, fileSize int64) int64 {
 	if offset >= fileSize {
 		return fileSize
 	}
+
+	// Сохраняем текущую позицию файла
+	originalPos, _ := file.Seek(0, io.SeekCurrent)
+	defer file.Seek(originalPos, io.SeekStart) // Восстанавливаем позицию
 
 	file.Seek(offset, io.SeekStart)
 	reader := bufio.NewReader(file)
