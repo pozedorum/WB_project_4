@@ -2,6 +2,7 @@ package chunks
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 )
@@ -19,14 +20,13 @@ const (
 	MaxChunkSize = 10 * 1024 * 1024 // 10MB
 )
 
-func SplitFiles(files []*os.File) ([]Chunk, error) {
+func SplitFiles(files []*os.File, lastChunkID int) ([]Chunk, int, error) {
 	result := make([]Chunk, 0, len(files))
-	lastChunkID := 0
-
+	// fmt.Println("files: ", files[0].Name())
 	for _, file := range files {
 		fileInfo, err := file.Stat()
 		if err != nil {
-			return nil, err
+			return nil, lastChunkID, err
 		}
 
 		fileSize := fileInfo.Size()
@@ -34,8 +34,9 @@ func SplitFiles(files []*os.File) ([]Chunk, error) {
 		if fileSize > MaxChunkSize {
 			// Большой файл - разбиваем на части по MaxChunkSize
 			fileChunks, chunksCount, err := SplitBigFile(file, lastChunkID, fileSize)
+			// fmt.Printf("lastChunkID: %d, chunksCount: %d, err: %v", lastChunkID, chunksCount, err)
 			if err != nil {
-				return nil, err
+				return nil, lastChunkID, err
 			}
 			lastChunkID += chunksCount
 			result = append(result, fileChunks...)
@@ -47,7 +48,7 @@ func SplitFiles(files []*os.File) ([]Chunk, error) {
 		}
 	}
 
-	return result, nil
+	return result, lastChunkID, nil
 }
 
 func MakeChunkFromFile(file *os.File, chunkID int, fileSize int64) Chunk {
@@ -130,9 +131,15 @@ func adjustToLineStart(file *os.File, offset int64) int64 {
 
 	// Сохраняем текущую позицию файла
 	originalPos, _ := file.Seek(0, io.SeekCurrent)
-	defer file.Seek(originalPos, io.SeekStart) // Восстанавливаем позицию
-
-	file.Seek(offset, io.SeekStart)
+	defer func() {
+		if _, err := file.Seek(originalPos, io.SeekStart); err != nil {
+			fmt.Printf("grep internal error: %v", err)
+		} // Восстанавливаем позицию
+	}()
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		fmt.Printf("grep internal error: %v", err)
+		return 0
+	}
 	reader := bufio.NewReader(file)
 
 	// Читаем до следующей новой строки
@@ -142,7 +149,11 @@ func adjustToLineStart(file *os.File, offset int64) int64 {
 	}
 
 	// Новая позиция - начало следующей строки
-	newPos, _ := file.Seek(0, io.SeekCurrent)
+	newPos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		fmt.Printf("grep internal error: %v", err)
+		return 0
+	}
 	return newPos
 }
 
@@ -153,10 +164,20 @@ func adjustToLineEnd(file *os.File, offset int64, fileSize int64) int64 {
 	}
 
 	// Сохраняем текущую позицию файла
-	originalPos, _ := file.Seek(0, io.SeekCurrent)
-	defer file.Seek(originalPos, io.SeekStart) // Восстанавливаем позицию
-
-	file.Seek(offset, io.SeekStart)
+	originalPos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		fmt.Printf("grep internal error: %v", err)
+		return 0
+	}
+	defer func() {
+		if _, err := file.Seek(originalPos, io.SeekStart); err != nil {
+			fmt.Printf("grep internal error: %v", err)
+		} // Восстанавливаем позицию
+	}()
+	if _, err = file.Seek(offset, io.SeekStart); err != nil {
+		fmt.Printf("grep internal error: %v", err)
+		return 0
+	}
 	reader := bufio.NewReader(file)
 
 	// Ищем конец текущей строки
@@ -178,7 +199,10 @@ func (c *Chunk) GetChunkReader() (io.Reader, error) {
 	}
 
 	// Перемещаемся к началу чанка
-	file.Seek(c.StartOffset, io.SeekStart)
+	if _, err := file.Seek(c.StartOffset, io.SeekStart); err != nil {
+		fmt.Printf("grep internal error: %v", err)
+		return nil, err
+	}
 
 	// Ограничиваем чтение размером чанка
 	return io.LimitReader(file, c.EndOffset-c.StartOffset), nil

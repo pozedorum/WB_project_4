@@ -1,9 +1,10 @@
 1
-2
+aboba2 
 3
-4
+4 boba
 5
 6
 aboba
 beba
 boba
+pattern

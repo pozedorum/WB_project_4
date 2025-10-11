@@ -29,7 +29,7 @@ type ChunkMetadata struct {
 }
 
 const (
-	operationGrep = "grep"
-	operationCut  = "cut"
-	operationSort = "sort"
+	OperationGrep = "grep"
+	// OperationCut  = "cut"
+	// OperationSort = "sort"
 )

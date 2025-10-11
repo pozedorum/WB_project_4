@@ -32,15 +32,15 @@ func newWorker(id int, wg *sync.WaitGroup, taskChan <-chan models.Task, resultCh
 }
 
 func (w *Worker) run() {
-	//log.Printf("Worker %d started", w.id)
+	// log.Printf("Worker %d started", w.id)
 
 	for task := range w.taskChan {
 		result := w.processTask(task)
-		//fmt.Println("result uploaded", result.ChunkID)
+		// fmt.Println("result uploaded", result.ChunkID)
 		w.resultChan <- result
 	}
 
-	//log.Printf("Worker %d finished (task channel closed)", w.id)
+	// log.Printf("Worker %d finished (task channel closed)", w.id)
 
 	// Уведомляем master о завершении работы
 	w.wg.Done()
@@ -48,7 +48,7 @@ func (w *Worker) run() {
 
 // processTask обрабатывает одну задачу
 func (w *Worker) processTask(task models.Task) models.Result {
-	//log.Printf("Worker %d processing task %d", w.id, task.ID)
+	// log.Printf("Worker %d processing task %d", w.id, task.ID)
 
 	var reader io.Reader
 	res := models.Result{
@@ -60,11 +60,11 @@ func (w *Worker) processTask(task models.Task) models.Result {
 		FilePath: task.Chunk.FilePath, // Добавляем информацию о файле
 	}
 
-	if task.Operation != "grep" {
+	if task.Operation != models.OperationGrep {
 		res.Error = fmt.Errorf("operation is not supported")
 		return res
 	}
-	//fmt.Println("worker offsets: ", task.Chunk.StartOffset, task.Chunk.EndOffset)
+	// fmt.Println("worker offsets: ", task.Chunk.StartOffset, task.Chunk.EndOffset)
 	reader, res.Error = task.Chunk.GetChunkReader()
 	if res.Error != nil {
 		res.Error = fmt.Errorf("failed to get chunk reader: %v", res.Error)
@@ -76,9 +76,11 @@ func (w *Worker) processTask(task models.Task) models.Result {
 
 	// Закрываем reader если он реализует интерфейс Closer
 	if closer, ok := reader.(io.Closer); ok {
-		closer.Close()
+		if err := closer.Close(); err != nil {
+			fmt.Printf("grep internal error: %v", err)
+		}
 	}
-	//fmt.Println("worker end with: ", res.Lines)
+	// fmt.Println("worker end with: ", res.Lines)
 	return res
 }
 

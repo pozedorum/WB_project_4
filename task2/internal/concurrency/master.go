@@ -2,6 +2,7 @@ package concurrency
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
 
@@ -15,7 +16,9 @@ type Master struct {
 	taskChan     chan models.Task
 	resultChan   chan models.Result
 	totalTasks   int
+	totalFiles   int
 	resultMap    map[int]models.Result
+	resultMutex  sync.RWMutex
 	done         chan bool
 	progressChan chan int
 	taskCounter  int
@@ -58,33 +61,34 @@ func NewMaster(workersCount int, flags *options.FlagStruct) (*Master, error) {
 
 // ProcessFilesStreaming - потоковая обработка файлов
 func (m *Master) ProcessFilesStreaming(files []*os.File, operation, pattern string) error {
-
+	m.totalFiles = len(files)
 	// Запускаем потоковое создание задач в отдельной горутине
 	go m.createTasksStreaming(files, operation, pattern)
 
 	// Ждем завершения сбора результатов
 	<-m.done
 
-	//log.Printf("Processing completed: %d tasks processed", m.totalTasks)
+	// log.Printf("Processing completed: %d tasks processed", m.totalTasks)
 	return nil
 }
 
 // createTasksStreaming - потоково создает задачи и отправляет в канал
 func (m *Master) createTasksStreaming(files []*os.File, operation, pattern string) {
 	defer close(m.taskChan) // Гарантируем закрытие канала задач
-
+	lastChunkID := 0
 	for _, file := range files {
-		//log.Printf("Splitting file: %s", file.Name())
+		// log.Printf("Splitting file: %s", file.Name())
 
 		// Разбиваем файл на чанки
-		fileChunks, err := chunks.SplitFiles([]*os.File{file})
+		fileChunks, newLastChunkID, err := chunks.SplitFiles([]*os.File{file}, lastChunkID)
 		if err != nil {
-			//log.Printf("Error splitting file %s: %v", file.Name(), err)
+			log.Printf("Error splitting file %s: %v", file.Name(), err)
 			continue
 		}
-
+		lastChunkID = newLastChunkID
 		// Отправляем чанки в канал задач
 		for _, chunk := range fileChunks {
+			// fmt.Println("chunk id ", chunk.ChunkID)
 			// fmt.Println("chunk start offset ", chunk.StartOffset)
 			// fmt.Println("chunk end offset ", chunk.EndOffset)
 			task := models.Task{
@@ -98,103 +102,68 @@ func (m *Master) createTasksStreaming(files []*os.File, operation, pattern strin
 			m.taskCounter++
 			m.totalTasks++
 
-			//log.Printf("Task %d created for file %s", task.ID, file.Name())
+			// log.Printf("Task %d created for file %s", task.ID, file.Name())
 		}
 	}
-	//log.Printf("All tasks created: %d total tasks", m.totalTasks)
+	// log.Printf("All tasks created: %d total tasks", m.totalTasks)
 }
 
 // resultCollector собирает результаты из канала
 func (m *Master) resultCollector() {
-	//log.Println("Result collector started")
-
-	// Ждем завершения всех воркеров в отдельной горутине
 	go func() {
-		m.wg.Wait() // Ждем завершения всех воркеров
-		//fmt.Println("closing resultChan")
-		close(m.resultChan) // Закрываем канал результатов
+		m.wg.Wait()
+		close(m.resultChan)
 	}()
 
+	receivedResults := 0
 	for result := range m.resultChan {
+		m.resultMutex.Lock()
 		m.resultMap[result.ChunkID] = result
-		// Неблокирующая отправка в канал прогресса
+		m.resultMutex.Unlock()
+
+		receivedResults++
+
 		select {
-		case m.progressChan <- len(m.resultMap):
+		case m.progressChan <- receivedResults:
 		default:
-			// Пропускаем обновление прогресса если канал полный
 		}
 
-		//log.Printf("Result collected for task %d from worker %d (lines: %d)",
-		//	result.TaskID, result.WorkerID, len(result.Lines))
+		if receivedResults >= m.totalTasks {
+			break
+		}
 	}
-	// Все результаты собраны (канал закрыт)
+
 	close(m.progressChan)
 	m.done <- true
 }
 
-<<<<<<< Updated upstream
-// progressDisplay отображает и обновляет полосу прогресса
-func (m *Master) progressDisplay() {
-	if m.totalTasks == 0 {
-		fmt.Println("No tasks to process")
-		return
-	}
-
-	lastPercent := -1
-	for completed := range m.progressChan {
-		percent := int(float64(completed) / float64(m.totalTasks) * 100)
-
-		if percent != lastPercent {
-			m.redrawProgressBar(completed, m.totalTasks, percent)
-			lastPercent = percent
-		}
-
-		if completed >= m.totalTasks {
-			m.redrawProgressBar(completed, m.totalTasks, 100)
-			fmt.Println()
-			return
-		}
-	}
-}
-
-// redrawProgressBar перерисовывает полосу прогресса
-func (m *Master) redrawProgressBar(completed, total, percent int) {
-	// Очищаем строку и возвращаем каретку в начало
-	fmt.Print("\r")
-
-	// Рисуем прогресс-бар
-	barWidth := 50
-	filled := barWidth * percent / 100
-	empty := barWidth - filled
-
-	fmt.Printf("Progress: [")
-	for i := 0; i < filled; i++ {
-		fmt.Print("=")
-	}
-	for i := 0; i < empty; i++ {
-		fmt.Print(" ")
-	}
-	fmt.Printf("] %d/%d (%d%%)", completed, total, percent)
-}
-
-// GetResults возвращает результаты
-func (m *Master) GetResults() []*models.Result {
-	return m.resultList
-}
-
-=======
->>>>>>> Stashed changes
 // MergeResults объединяет все результаты
 func (m *Master) MergeResults() []string {
 	var allLines []string
-	for i := 0; i < m.totalTasks; i++ {
-		result := m.resultMap[i]
-		if result.Error == nil {
-			allLines = append(allLines, result.Lines...)
+
+	m.resultMutex.RLock()
+	defer m.resultMutex.RUnlock()
+
+	for chunkID := 0; chunkID < m.totalTasks; chunkID++ {
+		if result, exists := m.resultMap[chunkID]; exists {
+			if result.Error == nil {
+				allLines = append(allLines, m.AddPath(result.Lines, result.FilePath)...)
+			} else {
+				allLines = append(allLines, fmt.Sprintf("error with file %s: %v", result.FilePath, result.Error))
+			}
 		} else {
-			allLines = append(allLines, fmt.Sprintf("error with file %s: %v", result.FilePath, result.Error))
+			allLines = append(allLines, fmt.Sprintf("error: missing result for chunk %d", chunkID))
 		}
-		//fmt.Println(m.resultMap[i].ChunkID)
 	}
 	return allLines
+}
+
+func (m *Master) AddPath(lines []string, filepath string) []string {
+	if m.totalFiles == 1 {
+		return lines
+	}
+	for ind, line := range lines {
+		lines[ind] = fmt.Sprintf("%s:%s", filepath, line)
+	}
+	return lines
 }

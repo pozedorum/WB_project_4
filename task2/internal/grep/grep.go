@@ -13,7 +13,6 @@ import (
 
 // Grep выполняет поиск по шаблону в текстовом потоке с учетом флагов
 func Grep(input io.Reader, fs options.FlagStruct, writer io.Writer) error {
-
 	var re *regexp.Regexp
 	var err error
 
@@ -66,7 +65,10 @@ func Grep(input io.Reader, fs options.FlagStruct, writer io.Writer) error {
 				count++
 			}
 		}
-		fmt.Fprintf(writer, "%d\n", count)
+		if _, err := fmt.Fprintf(writer, "%d\n", count); err != nil {
+			// fmt.Printf("grep internal error: %v", err)
+			return err
+		}
 		return nil
 	}
 
