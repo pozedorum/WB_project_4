@@ -8,26 +8,17 @@ import (
 
 	"github.com/pozedorum/WB_project_2/task18/config"
 	"github.com/pozedorum/WB_project_2/task18/internal/apperrors"
-	"github.com/pozedorum/WB_project_2/task18/internal/models"
+	"github.com/pozedorum/WB_project_2/task18/internal/interfaces"
 	"github.com/pozedorum/WB_project_2/task18/pkg/logger"
 )
 
-type EventService interface {
-	CreateEvent(event models.Event) error
-	UpdateEvent(event models.Event) error
-	DeleteEvent(event models.Event) error
-	GetDayEvents(userID string, date time.Time) ([]models.Event, error)
-	GetWeekEvents(userID string, startWeek time.Time) ([]models.Event, error)
-	GetMonthEvents(userID string, startMonth time.Time) ([]models.Event, error)
-}
-
 type Server struct {
 	httpServer *http.Server
-	serv       EventService
+	serv       interfaces.EventService
 	logger     *logger.Logger
 }
 
-func NewServer(conf config.Config, service EventService) (*Server, error) {
+func NewServer(conf config.Config, service interfaces.EventService) (*Server, error) {
 	lg, err := logger.New(conf.FilePath, conf.ConsoleLog)
 	if err != nil {
 		return nil, apperrors.ModifyErr(*apperrors.ErrInternal, fmt.Errorf("logger init failed: %w", err))

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pozedorum/WB_project_2/task18/internal/apperrors"
 	"github.com/pozedorum/WB_project_2/task18/internal/models"
 )
 
@@ -25,7 +24,7 @@ GET /events_for_month — события на месяц.
 func (s *Server) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 	event, err := parseEventRequest(r)
 	if err != nil {
-		s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+		s.handleError(w, r, models.Err404InvalidInput)
 		return
 	}
 
@@ -42,7 +41,7 @@ func (s *Server) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	event, err := parseEventRequest(r)
 	if err != nil {
-		s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+		s.handleError(w, r, models.Err404InvalidInput)
 		return
 	}
 
@@ -67,19 +66,19 @@ func (s *Server) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 	if strings.Contains(contentType, "application/json") {
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+			s.handleError(w, r, models.Err404InvalidInput)
 			return
 		}
 	} else {
 		if err := r.ParseForm(); err != nil {
-			s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+			s.handleError(w, r, models.Err404InvalidInput)
 			return
 		}
 		input.ID = r.FormValue("id")
 	}
 	inputIDInt, err = strconv.Atoi(input.ID)
 	if err != nil {
-		s.handleError(w, r, apperrors.ErrInvalidInput)
+		s.handleError(w, r, models.Err404InvalidInput)
 		return
 	}
 
@@ -96,7 +95,7 @@ func (s *Server) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetDayEvents(w http.ResponseWriter, r *http.Request) {
 	userID, dateFrom, err := s.parseAndValidateParams(r)
 	if err != nil {
-		s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+		s.handleError(w, r, models.Err404InvalidInput)
 		return
 	}
 
@@ -114,7 +113,7 @@ func (s *Server) handleGetDayEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetWeekEvents(w http.ResponseWriter, r *http.Request) {
 	userID, dateFrom, err := s.parseAndValidateParams(r)
 	if err != nil {
-		s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+		s.handleError(w, r, models.Err404InvalidInput)
 		return
 	}
 
@@ -132,7 +131,7 @@ func (s *Server) handleGetWeekEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetMonthEvents(w http.ResponseWriter, r *http.Request) {
 	userID, dateFrom, err := s.parseAndValidateParams(r)
 	if err != nil {
-		s.handleError(w, r, apperrors.ModifyErr(*apperrors.ErrInvalidInput, err))
+		s.handleError(w, r, models.Err404InvalidInput)
 		return
 	}
 
@@ -155,28 +154,6 @@ func (s *Server) respondJSON(w http.ResponseWriter, status int, data any) {
 	}
 }
 
-func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
-	if err == nil {
-		return
-	}
-
-	var serverErr *apperrors.ServerError
-	if errors.As(err, &serverErr) {
-		serverErr, ok := err.(*apperrors.ServerError)
-		if serverErr != nil && ok {
-			s.logger.LogError(r, serverErr)
-			s.respondJSON(w, serverErr.Code, map[string]string{
-				"error": serverErr.ClientError(),
-			})
-			return
-		}
-	}
-
-	s.respondJSON(w, http.StatusInternalServerError, map[string]string{
-		"error": "Internal server error",
-	})
-}
-
 func parseEventRequest(r *http.Request) (models.Event, error) {
 	var event models.Event
 	contentType := r.Header.Get("Content-Type")
@@ -194,8 +171,12 @@ func parseEventRequest(r *http.Request) (models.Event, error) {
 		if err := r.ParseForm(); err != nil {
 			return models.Event{}, err
 		}
-
-		event.ID = r.FormValue("id")
+		strID := r.FormValue("id")
+		if eventID, err := strconv.Atoi(strID); err != nil {
+			event.ID = eventID
+		} else {
+			return models.Event{}, err // поменять на свою ошибку
+		}
 		event.UserID = r.FormValue("user_id")
 		event.Text = r.FormValue("text")
 		dateStr := r.FormValue("date")
@@ -204,7 +185,7 @@ func parseEventRequest(r *http.Request) (models.Event, error) {
 			if err != nil {
 				return models.Event{}, err
 			}
-			event.Date = parsedDate
+			event.Datetime = parsedDate
 		}
 
 		return event, nil
@@ -214,20 +195,23 @@ func parseEventRequest(r *http.Request) (models.Event, error) {
 }
 
 func (s *Server) parseAndValidateReqCU(r *http.Request) (*models.EventCreateUpdateRequest, error) {
-	var req models.EventCreateUpdateRequest
-	userID := r.URL.Query().Get("user_id")
-	if userID == "" {
-		return "", time.Time{}, errors.New("user_id parameter is required")
+	var (
+		req models.EventCreateUpdateRequest
+		err error
+	)
+	req.UserID = r.URL.Query().Get("user_id")
+	if req.UserID == "" {
+		return nil, models.ErrEmptyUserID
 	}
 
 	dateStr := r.URL.Query().Get("date")
 	if dateStr == "" {
-		return "", time.Time{}, errors.New("date parameter is required")
+		return nil, models.ErrEmptyDatetime
 	}
 
-	date, err := time.Parse("2006-01-02", dateStr)
+	req.EventDatetime, err = time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("invalid date format: %w", err)
+		return nil, fmt.Errorf("invalid date format: %w", err)
 	}
 
 	return &req, nil
