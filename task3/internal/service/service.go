@@ -3,79 +3,91 @@ package service
 import (
 	"time"
 
-	"github.com/pozedorum/WB_project_2/task18/internal/models"
+	"github.com/pozedorum/WB_project_4/task3/interfaces"
+	"github.com/pozedorum/WB_project_4/task3/models"
 )
 
-type EventRepository interface {
-	CreateEvent(event models.Event) error
-	UpdateEvent(event models.Event) error
-	DeleteEvent(event models.Event) error
-	GetByDateRange(start, end time.Time) []models.Event
-}
-
 type EventService struct {
-	repo EventRepository
+	repo interfaces.Repository
 }
 
-func NewEventService(repo EventRepository) *EventService {
+func NewEventService(repo interfaces.Repository) *EventService {
 	return &EventService{repo: repo}
 }
 
 func (s *EventService) CreateEvent(event models.Event) error {
-	err := s.repo.CreateEvent(event)
-	// if errors.Is(err, storage.ErrInvalidInput) {
-	// 	return apperrors.ErrInvalidInput
-	// }
-	// if errors.Is(err, storage.ErrAlreadyExists) {
-	// 	return apperrors.ErrAlreadyExists
-	// }
-	return err
+	// Бизнес-логика: нельзя создавать события в прошлом
+	if event.Datetime.Before(time.Now()) {
+		return models.Err503PastDate
+	}
+
+	// Можно добавить проверку на существование события с таким же временем
+	// existingEvents, err := s.repo.GetByDateRange(...)
+
+	return s.repo.CreateEvent(event)
 }
 
 func (s *EventService) UpdateEvent(event models.Event) error {
-	err := s.repo.UpdateEvent(event)
-	// if errors.Is(err, storage.ErrNotFoundInStorage) {
-	// 	return apperrors.ErrNotFound
-	// }
-	return err
+	// Проверяем существование события
+	existing, err := s.repo.GetEventByID(event.ID)
+	if err != nil {
+		return err
+	}
+
+	// Сохраняем неизменяемые поля
+	event.CreatedAt = existing.CreatedAt
+	event.UpdatedAt = time.Now()
+
+	return s.repo.UpdateEvent(event)
 }
 
 func (s *EventService) DeleteEvent(event models.Event) error {
-	err := s.repo.DeleteEvent(event)
-	// if errors.Is(err, storage.ErrNotFoundInStorage) {
-	// 	return apperrors.ErrNotFound
-	// }
-	return err
+	return s.repo.DeleteEvent(event)
 }
 
 func (s *EventService) GetDayEvents(userID string, date time.Time) ([]models.Event, error) {
-	if userID == "" {
-		return nil, models.Err404InvalidInput
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	end := start.Add(24 * time.Hour)
+
+	events, err := s.repo.GetByDateRange(start, end)
+	if err != nil {
+		return nil, err
 	}
-	return s.getByDateRange(userID, date, date.AddDate(0, 0, 1)), nil
+
+	// Фильтруем по user_id
+	return s.filterEventsByUserID(events, userID), nil
 }
 
 func (s *EventService) GetWeekEvents(userID string, startWeek time.Time) ([]models.Event, error) {
-	if userID == "" {
-		return nil, models.Err404InvalidInput
+	start := time.Date(startWeek.Year(), startWeek.Month(), startWeek.Day(), 0, 0, 0, 0, startWeek.Location())
+	end := start.Add(7 * 24 * time.Hour)
+
+	events, err := s.repo.GetByDateRange(start, end)
+	if err != nil {
+		return nil, err
 	}
-	return s.getByDateRange(userID, startWeek, startWeek.AddDate(0, 0, 7)), nil
+
+	return s.filterEventsByUserID(events, userID), nil
 }
 
 func (s *EventService) GetMonthEvents(userID string, startMonth time.Time) ([]models.Event, error) {
-	if userID == "" {
-		return nil, models.Err404InvalidInput
+	start := time.Date(startMonth.Year(), startMonth.Month(), 1, 0, 0, 0, 0, startMonth.Location())
+	end := start.AddDate(0, 1, 0) // Следующий месяц
+
+	events, err := s.repo.GetByDateRange(start, end)
+	if err != nil {
+		return nil, err
 	}
-	return s.getByDateRange(userID, startMonth, startMonth.AddDate(0, 1, 0)), nil
+
+	return s.filterEventsByUserID(events, userID), nil
 }
 
-func (s *EventService) getByDateRange(userID string, begin, end time.Time) []models.Event {
-	res := make([]models.Event, 0, 2)
-	allEvents := s.repo.GetByDateRange(begin, end)
-	for _, event := range allEvents {
+func (s *EventService) filterEventsByUserID(events []models.Event, userID string) []models.Event {
+	var filtered []models.Event
+	for _, event := range events {
 		if event.UserID == userID {
-			res = append(res, event)
+			filtered = append(filtered, event)
 		}
 	}
-	return res
+	return filtered
 }

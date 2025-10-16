@@ -5,9 +5,9 @@ package service
 // 	"testing"
 // 	"time"
 
-// 	"github.com/pozedorum/WB_project_2/task18/internal/apperrors"
-// 	"github.com/pozedorum/WB_project_2/task18/internal/models"
-// 	"github.com/pozedorum/WB_project_2/task18/internal/storage"
+// 	"github.com/pozedorum/WB_project_4/task3/internal/apperrors"
+// 	"github.com/pozedorum/WB_project_4/task3/internal/models"
+// 	"github.com/pozedorum/WB_project_4/task3/internal/storage"
 // 	"github.com/stretchr/testify/assert"
 // )
 

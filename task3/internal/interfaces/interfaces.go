@@ -1,12 +1,18 @@
 package interfaces
 
 import (
+	"context"
 	"time"
 
-	"github.com/pozedorum/WB_project_2/task18/internal/models"
+	"github.com/pozedorum/WB_project_4/task3/internal/models"
 )
 
-type EventService interface {
+type Server interface {
+	Run() error
+	Shutdown(ctx context.Context) error
+}
+
+type Service interface {
 	CreateEvent(event models.Event) error
 	UpdateEvent(event models.Event) error
 	DeleteEvent(event models.Event) error
@@ -15,4 +21,11 @@ type EventService interface {
 	GetMonthEvents(userID string, startMonth time.Time) ([]models.Event, error)
 }
 
-type EventServer interface{}
+type Repository interface {
+	CreateEvent(event models.Event) error
+	UpdateEvent(event models.Event) error
+	DeleteEvent(event models.Event) error
+	GetByDateRange(start, end time.Time) ([]models.Event, error)
+	GetEventByID(id int) (*models.Event, error)
+	Close() error
+}

@@ -1,15 +1,13 @@
 package server
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/pozedorum/WB_project_2/task18/internal/models"
+	"github.com/gin-gonic/gin"
+	"github.com/pozedorum/WB_project_4/task3/internal/models"
 )
 
 /*
@@ -21,198 +19,172 @@ GET /events_for_week — события на неделю;
 GET /events_for_month — события на месяц.
 */
 
-func (s *Server) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
-	event, err := parseEventRequest(r)
-	if err != nil {
-		s.handleError(w, r, models.Err404InvalidInput)
+func (s *EventServer) handleCreateEvent(c *gin.Context) {
+	var event models.Event
+
+	// Поддержка JSON и form-data
+	if err := c.ShouldBind(&event); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err404InvalidInput.Error()})
+		return
+	}
+
+	// Валидация
+	if event.UserID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+	if event.Text == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "event text is required"})
+		return
+	}
+	if event.Datetime.IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date is required"})
 		return
 	}
 
 	if err := s.serv.CreateEvent(event); err != nil {
-		s.handleError(w, r, err)
+		switch err {
+		case models.Err503AlreadyExists:
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		case models.Err503PastDate:
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
+		}
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]string{
-		"result": fmt.Sprintf("event №%s %s created successfully", event.ID, event.Text),
+	c.JSON(http.StatusOK, gin.H{
+		"result": fmt.Sprintf("event created successfully: %s", event.Text),
 	})
 }
 
-func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
-	event, err := parseEventRequest(r)
-	if err != nil {
-		s.handleError(w, r, models.Err404InvalidInput)
+func (s *EventServer) handleUpdateEvent(c *gin.Context) {
+	var event models.Event
+
+	if err := c.ShouldBind(&event); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err404InvalidInput.Error()})
+		return
+	}
+
+	// Валидация
+	if event.ID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "event ID is required"})
 		return
 	}
 
 	if err := s.serv.UpdateEvent(event); err != nil {
-		s.handleError(w, r, err)
+		switch err {
+		case models.Err503NotFound:
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
+		}
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]string{
-		"result": fmt.Sprintf("event №%s %s updates successfully", event.ID, event.Text),
+	c.JSON(http.StatusOK, gin.H{
+		"result": fmt.Sprintf("event #%d updated successfully", event.ID),
 	})
 }
 
-func (s *Server) handleDeleteEvent(w http.ResponseWriter, r *http.Request) {
-	// Поддерживаем оба формата для удаления
-	var (
-		input      models.EventIDRequest
-		inputIDInt int
-		err        error
-	)
-	contentType := r.Header.Get("Content-Type")
-
-	if strings.Contains(contentType, "application/json") {
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			s.handleError(w, r, models.Err404InvalidInput)
-			return
-		}
-	} else {
-		if err := r.ParseForm(); err != nil {
-			s.handleError(w, r, models.Err404InvalidInput)
-			return
-		}
-		input.ID = r.FormValue("id")
+func (s *EventServer) handleDeleteEvent(c *gin.Context) {
+	var input struct {
+		ID string `json:"id" form:"id" binding:"required"`
 	}
-	inputIDInt, err = strconv.Atoi(input.ID)
+
+	if err := c.ShouldBind(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err404InvalidInput.Error()})
+		return
+	}
+
+	// Конвертируем ID в int
+	eventID, err := strconv.Atoi(input.ID)
 	if err != nil {
-		s.handleError(w, r, models.Err404InvalidInput)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event ID format"})
 		return
 	}
 
-	if err := s.serv.DeleteEvent(models.Event{ID: input.ID}); err != nil {
-		s.handleError(w, r, err)
+	event := models.Event{ID: eventID}
+	if err := s.serv.DeleteEvent(event); err != nil {
+		switch err {
+		case models.Err503NotFound:
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
+		}
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]string{
-		"result": fmt.Sprintf("event №%s deleted successfully", input.ID),
+	c.JSON(http.StatusOK, gin.H{
+		"result": fmt.Sprintf("event #%s deleted successfully", input.ID),
 	})
 }
 
-func (s *Server) handleGetDayEvents(w http.ResponseWriter, r *http.Request) {
-	userID, dateFrom, err := s.parseAndValidateParams(r)
+func (s *EventServer) handleGetDayEvents(c *gin.Context) {
+	userID, date, err := s.parseQueryParams(c)
 	if err != nil {
-		s.handleError(w, r, models.Err404InvalidInput)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	events, err := s.serv.GetDayEvents(userID, dateFrom)
+	events, err := s.serv.GetDayEvents(userID, date)
 	if err != nil {
-		s.handleError(w, r, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"result": events,
-	})
+	c.JSON(http.StatusOK, gin.H{"result": events})
 }
 
-func (s *Server) handleGetWeekEvents(w http.ResponseWriter, r *http.Request) {
-	userID, dateFrom, err := s.parseAndValidateParams(r)
+func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
+	userID, date, err := s.parseQueryParams(c)
 	if err != nil {
-		s.handleError(w, r, models.Err404InvalidInput)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	events, err := s.serv.GetWeekEvents(userID, dateFrom)
+	events, err := s.serv.GetWeekEvents(userID, date)
 	if err != nil {
-		s.handleError(w, r, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"result": events,
-	})
+	c.JSON(http.StatusOK, gin.H{"result": events})
 }
 
-func (s *Server) handleGetMonthEvents(w http.ResponseWriter, r *http.Request) {
-	userID, dateFrom, err := s.parseAndValidateParams(r)
+func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
+	userID, date, err := s.parseQueryParams(c)
 	if err != nil {
-		s.handleError(w, r, models.Err404InvalidInput)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	events, err := s.serv.GetMonthEvents(userID, dateFrom)
+	events, err := s.serv.GetMonthEvents(userID, date)
 	if err != nil {
-		s.handleError(w, r, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"result": events,
-	})
+	c.JSON(http.StatusOK, gin.H{"result": events})
 }
 
-func (s *Server) respondJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		panic(err)
-	}
-}
-
-func parseEventRequest(r *http.Request) (models.Event, error) {
-	var event models.Event
-	contentType := r.Header.Get("Content-Type")
-
-	// Обработка JSON
-	if strings.Contains(contentType, "application/json") {
-		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-			return models.Event{}, err
-		}
-		return event, nil
+// Вспомогательные методы
+func (s *EventServer) parseQueryParams(c *gin.Context) (string, time.Time, error) {
+	userID := c.Query("user_id")
+	if userID == "" {
+		return "", time.Time{}, models.ErrEmptyUserID
 	}
 
-	// Обработка URL-формы
-	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
-		if err := r.ParseForm(); err != nil {
-			return models.Event{}, err
-		}
-		strID := r.FormValue("id")
-		if eventID, err := strconv.Atoi(strID); err != nil {
-			event.ID = eventID
-		} else {
-			return models.Event{}, err // поменять на свою ошибку
-		}
-		event.UserID = r.FormValue("user_id")
-		event.Text = r.FormValue("text")
-		dateStr := r.FormValue("date")
-		if dateStr != "" {
-			parsedDate, err := time.Parse(time.RFC3339, dateStr)
-			if err != nil {
-				return models.Event{}, err
-			}
-			event.Datetime = parsedDate
-		}
-
-		return event, nil
-	}
-
-	return models.Event{}, errors.New("unsupported content type")
-}
-
-func (s *Server) parseAndValidateReqCU(r *http.Request) (*models.EventCreateUpdateRequest, error) {
-	var (
-		req models.EventCreateUpdateRequest
-		err error
-	)
-	req.UserID = r.URL.Query().Get("user_id")
-	if req.UserID == "" {
-		return nil, models.ErrEmptyUserID
-	}
-
-	dateStr := r.URL.Query().Get("date")
+	dateStr := c.Query("date")
 	if dateStr == "" {
-		return nil, models.ErrEmptyDatetime
+		return "", time.Time{}, models.ErrEmptyDatetime
 	}
 
-	req.EventDatetime, err = time.Parse("2006-01-02", dateStr)
+	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid date format: %w", err)
+		return "", time.Time{}, fmt.Errorf("invalid date format: %w", err)
 	}
 
-	return &req, nil
+	return userID, date, nil
 }

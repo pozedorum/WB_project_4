@@ -9,14 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pozedorum/WB_project_2/task18/config"
-	"github.com/pozedorum/WB_project_2/task18/internal/server"
-	"github.com/pozedorum/WB_project_2/task18/internal/service"
-	"github.com/pozedorum/WB_project_2/task18/internal/storage"
+	"github.com/pozedorum/WB_project_4/task3/config"
+	"github.com/pozedorum/WB_project_4/task3/internal/server"
+	"github.com/pozedorum/WB_project_4/task3/internal/service"
+	"github.com/pozedorum/WB_project_4/task3/internal/storage"
 )
 
 func main() {
-
 	cfg := config.Load()
 	// Инициализация зависимостей
 	repo := storage.NewEventStorage()
