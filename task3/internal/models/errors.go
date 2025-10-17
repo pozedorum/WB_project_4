@@ -3,7 +3,12 @@ package models
 import "errors"
 
 var (
-	Err404InvalidInput  = errors.New("invalid input data")
+	Err400InvalidInput   = errors.New("invalid input data")
+	Err400EmptyUserID    = errors.New("user_id is required")
+	Err400EmptyText      = errors.New("text is required")
+	Err400EmptyDatetime  = errors.New("date is required")
+	Err400InvalidEventID = errors.New("invalid event ID format")
+
 	Err500InternalError = errors.New("internal server error")
 	Err503AlreadyExists = errors.New("event already exists")
 	Err503NotFound      = errors.New("event not found")

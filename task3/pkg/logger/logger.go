@@ -1,72 +1,145 @@
 package logger
 
 import (
-	"fmt"
-	"log"
-	"net/http"
+	"io"
 	"os"
-	"path/filepath"
-	"strings"
-	"time"
+	"sync"
+
+	"github.com/rs/zerolog"
 )
 
-type Logger struct {
-	fileLogger *log.Logger // Для записи в файл
-	consoleLog bool        // Дублировать в консоль
+/*
+На случай использвоания логгера в других проектах оставлю здесь интерфейс
+type Logger interface {
+	Debug(operation, message string, keyvals ...interface{})
+	Info(operation, message string, keyvals ...interface{})
+	Warn(operation, message string, keyvals ...interface{})
+	Error(operation, message string, keyvals ...interface{})
+	Shutdown()
+}
+*/
 
+type Logger struct {
+	logChan  chan func()
+	done     chan struct{}
+	wg       sync.WaitGroup
+	zerolog  zerolog.Logger
+	isClosed bool
 }
 
-func New(logFile string, consoleLog bool) (*Logger, error) {
-
-	dir := filepath.Dir(logFile)
-	if dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create log directory: %w", err)
-		}
-	}
-	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
+func NewLogger(serviceName, logFilePath string) (*Logger, error) {
+	if err := os.MkdirAll("./logs", 0o755); err != nil {
 		return nil, err
 	}
 
-	return &Logger{
-		fileLogger: log.New(file, "", log.LstdFlags),
-		consoleLog: consoleLog,
-	}, nil
+	var output io.Writer
+	if logFilePath != "" {
+		file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		output = file
+	} else {
+		output = os.Stdout
+	}
+
+	zerologLogger := zerolog.New(output).
+		With().
+		Timestamp().
+		Str("service", serviceName).
+		Logger()
+
+	logger := &Logger{
+		logChan:  make(chan func(), 1000),
+		done:     make(chan struct{}),
+		zerolog:  zerologLogger,
+		isClosed: false,
+	}
+
+	logger.wg.Add(1)
+	go logger.processLogs()
+
+	return logger, nil
 }
 
-// Middleware для HTTP-запросов
-func (l *Logger) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		duration := time.Since(start)
-		l.log("[REQUEST]", r.Method, r.URL.Path, r.RemoteAddr, duration.String())
+func (l *Logger) processLogs() {
+	defer l.wg.Done()
 
-	})
+	for {
+		select {
+		case logFunc := <-l.logChan:
+			logFunc()
+		case <-l.done:
+			// Дописываем оставшиеся логи
+			for {
+				select {
+				case logFunc := <-l.logChan:
+					logFunc()
+				default:
+					return
+				}
+			}
+		}
+	}
 }
 
-func (l *Logger) LogError(r *http.Request, err error) {
-	if err == nil {
+// Методы для логирования
+func (l *Logger) Debug(operation, message string, keyvals ...interface{}) {
+	l.log(l.zerolog.Debug(), operation, message, keyvals...)
+}
+
+func (l *Logger) Info(operation, message string, keyvals ...interface{}) {
+	l.log(l.zerolog.Info(), operation, message, keyvals...)
+}
+
+func (l *Logger) Warn(operation, message string, keyvals ...interface{}) {
+	l.log(l.zerolog.Warn(), operation, message, keyvals...)
+}
+
+func (l *Logger) Error(operation, message string, keyvals ...interface{}) {
+	l.log(l.zerolog.Error(), operation, message, keyvals...)
+}
+
+func (l *Logger) log(event *zerolog.Event, operation, message string, keyvals ...interface{}) {
+	if l.isClosed {
 		return
 	}
-	l.log("[ERROR]", r.Method, r.URL.Path, err.Error())
 
-}
+	// Создаем замыкание с уже подготовленными данными
+	logFunc := func() {
+		event.Str("operation", operation)
 
-func (l *Logger) LogInfo(info string) {
-	l.log("[INFO]", info)
-}
+		// Обрабатываем key-value пары
+		for i := 0; i < len(keyvals); i += 2 {
+			if i+1 < len(keyvals) {
+				key, ok := keyvals[i].(string)
+				if !ok {
+					continue
+				}
+				event.Interface(key, keyvals[i+1])
+			}
+		}
 
-func (l *Logger) log(prefix string, v ...string) {
-	parts := make([]string, 0, len(v)+1)
-	parts = append(parts, prefix)
-	parts = append(parts, v...)
+		event.Msg(message)
+	}
 
-	msg := time.Now().Format("2006/01/02 15:04:05 ") + strings.Join(parts, " ")
-	l.fileLogger.Println(msg)
-
-	if l.consoleLog {
-		log.Println(msg)
+	// Асинхронная отправка
+	select {
+	case l.logChan <- logFunc:
+	default:
+		// Fallback синхронное логирование
+		logFunc()
 	}
 }
+
+func (l *Logger) Shutdown() {
+	if l.isClosed {
+		return
+	}
+
+	l.isClosed = true
+	close(l.done)
+	l.wg.Wait()
+}
+
+// var _ interfaces.Logger = (*Logger)(nil)

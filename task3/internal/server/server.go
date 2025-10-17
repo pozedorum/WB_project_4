@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,13 +12,15 @@ type EventServer struct {
 	server *http.Server
 	router *gin.Engine
 	serv   interfaces.Service
+	logger interfaces.Logger
 }
 
-func NewEventServer(port string, service interfaces.Service) *EventServer {
+func NewEventServer(port string, service interfaces.Service, logger interfaces.Logger) *EventServer {
 	router := gin.Default()
 
 	s := &EventServer{
-		serv: service,
+		serv:   service,
+		logger: logger,
 		server: &http.Server{
 			Addr:    ":" + port,
 			Handler: router,
@@ -41,12 +42,12 @@ func (s *EventServer) setupRoutes() {
 	s.router.GET("/events_for_month", s.handleGetMonthEvents)
 }
 
-func (s *EventServer) Run() error {
-	fmt.Printf("Gin server starting on %s\n", s.server.Addr)
+func (s *EventServer) Start() error {
+	s.logger.Info("SERVER_START", "Gin server starting", "addr", s.server.Addr)
 	return s.server.ListenAndServe()
 }
 
 func (s *EventServer) Shutdown(ctx context.Context) error {
-	fmt.Println("Gin server shutdown")
+	s.logger.Info("SERVER_SHUTDOWN", "Initiating server shutdown")
 	return s.server.Shutdown(ctx)
 }
