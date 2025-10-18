@@ -10,14 +10,21 @@ import (
 
 /*
 На случай использвоания логгера в других проектах оставлю здесь интерфейс
-type Logger interface {
-	Debug(operation, message string, keyvals ...interface{})
-	Info(operation, message string, keyvals ...interface{})
-	Warn(operation, message string, keyvals ...interface{})
-	Error(operation, message string, keyvals ...interface{})
-	Shutdown()
-}
+
+	type Logger interface {
+		Debug(operation, message string, keyvals ...interface{})
+		Info(operation, message string, keyvals ...interface{})
+		Warn(operation, message string, keyvals ...interface{})
+		Error(operation, message string, keyvals ...interface{})
+		Shutdown()
+	}
 */
+var (
+	Level_Info  = false
+	Level_Debug = true
+	Level_Warn  = false
+	Level_Error = true
+)
 
 type Logger struct {
 	logChan  chan func()
@@ -85,19 +92,27 @@ func (l *Logger) processLogs() {
 
 // Методы для логирования
 func (l *Logger) Debug(operation, message string, keyvals ...interface{}) {
-	l.log(l.zerolog.Debug(), operation, message, keyvals...)
+	if Level_Debug {
+		l.log(l.zerolog.Debug(), operation, message, keyvals...)
+	}
 }
 
 func (l *Logger) Info(operation, message string, keyvals ...interface{}) {
-	l.log(l.zerolog.Info(), operation, message, keyvals...)
+	if Level_Info {
+		l.log(l.zerolog.Info(), operation, message, keyvals...)
+	}
 }
 
 func (l *Logger) Warn(operation, message string, keyvals ...interface{}) {
-	l.log(l.zerolog.Warn(), operation, message, keyvals...)
+	if Level_Warn {
+		l.log(l.zerolog.Warn(), operation, message, keyvals...)
+	}
 }
 
 func (l *Logger) Error(operation, message string, keyvals ...interface{}) {
-	l.log(l.zerolog.Error(), operation, message, keyvals...)
+	if Level_Error {
+		l.log(l.zerolog.Error(), operation, message, keyvals...)
+	}
 }
 
 func (l *Logger) log(event *zerolog.Event, operation, message string, keyvals ...interface{}) {

@@ -19,128 +19,174 @@ func NewEventService(repo interfaces.Repository, logger interfaces.Logger) *Even
 	}
 }
 
-func (s *EventService) CreateEvent(event models.Event) error {
+func (s *EventService) CreateEvent(req models.EventCreateRequest) models.EventResponse {
 	start := time.Now()
+	response := models.EventResponse{}
 
 	s.logger.Debug("SERVICE_CREATE_EVENT", "Starting event creation",
-		"user_id", event.UserID,
-		"event_id", event.ID,
-		"datetime", event.Datetime)
+		"username", req.UserName,
+		"title", req.Title,
+		"datetime", req.Datetime)
 
 	// Бизнес-логика: нельзя создавать события в прошлом
-	if event.Datetime.Before(time.Now()) {
+	if req.Datetime.Before(time.Now()) {
 		s.logger.Warn("SERVICE_CREATE_EVENT", "Attempt to create event in the past",
-			"user_id", event.UserID,
-			"event_id", event.ID,
-			"datetime", event.Datetime,
+			"username", req.UserName,
+			"title", req.Title,
+			"datetime", req.Datetime,
 			"duration_ms", time.Since(start).Milliseconds())
-		return models.Err503PastDate
+		response.Error = models.Err503PastDate
+		return response
+	}
+
+	event := models.Event{
+		UserName:     req.UserName,
+		Title:        req.Title,
+		Text:         req.Text,
+		Datetime:     req.Datetime,
+		RemindBefore: int(req.RemindBefore / time.Second),
+		IsArchived:   false,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	err := s.repo.CreateEvent(event)
 	if err != nil {
 		s.logger.Error("SERVICE_CREATE_EVENT", "Failed to create event",
 			"error", err,
-			"user_id", event.UserID,
-			"event_id", event.ID,
+			"username", req.UserName,
+			"title", req.Title,
 			"duration_ms", time.Since(start).Milliseconds())
-		return err
+		response.Error = err
+		return response
 	}
 
 	s.logger.Info("SERVICE_CREATE_EVENT", "Event created successfully",
-		"user_id", event.UserID,
+		"username", req.UserName,
 		"event_id", event.ID,
 		"duration_ms", time.Since(start).Milliseconds())
 
-	return nil
+	response.UserName = req.UserName
+	response.EventID = event.ID
+	response.Title = req.Title
+	response.EventDatetime = req.Datetime
+	return response
 }
 
-func (s *EventService) UpdateEvent(event models.Event) error {
+func (s *EventService) UpdateEvent(req models.EventUpdateRequest) models.EventResponse {
 	start := time.Now()
+	response := models.EventResponse{}
 
 	s.logger.Debug("SERVICE_UPDATE_EVENT", "Starting event update",
-		"event_id", event.ID,
-		"user_id", event.UserID)
+		"event_id", req.EventID,
+		"title", req.Title)
 
 	// Проверяем существование события
-	existing, err := s.repo.GetEventByID(event.ID)
+	existing, err := s.repo.GetEventByID(req.EventID)
 	if err != nil {
 		s.logger.Error("SERVICE_UPDATE_EVENT", "Event not found for update",
 			"error", err,
-			"event_id", event.ID,
+			"event_id", req.EventID,
 			"duration_ms", time.Since(start).Milliseconds())
-		return err
+		response.Error = err
+		return response
 	}
 
-	// Сохраняем неизменяемые поля
-	event.CreatedAt = existing.CreatedAt
-	event.UpdatedAt = time.Now()
+	// Бизнес-логика: нельзя переносить события в прошлое
+	if req.Datetime.Before(time.Now()) {
+		s.logger.Warn("SERVICE_UPDATE_EVENT", "Attempt to move event to the past",
+			"event_id", req.EventID,
+			"datetime", req.Datetime,
+			"duration_ms", time.Since(start).Milliseconds())
+		response.Error = models.Err503PastDate
+		return response
+	}
+
+	event := models.Event{
+		ID:           req.EventID,
+		UserName:     existing.UserName, // UserName не меняется при обновлении
+		Title:        req.Title,
+		Text:         req.Text,
+		Datetime:     req.Datetime,
+		RemindBefore: int(req.RemindBefore / time.Second),
+		IsArchived:   existing.IsArchived,
+		CreatedAt:    existing.CreatedAt,
+		UpdatedAt:    time.Now(),
+	}
 
 	err = s.repo.UpdateEvent(event)
 	if err != nil {
 		s.logger.Error("SERVICE_UPDATE_EVENT", "Failed to update event",
 			"error", err,
-			"event_id", event.ID,
-			"user_id", event.UserID,
+			"event_id", req.EventID,
 			"duration_ms", time.Since(start).Milliseconds())
-		return err
+		response.Error = err
+		return response
 	}
 
 	s.logger.Info("SERVICE_UPDATE_EVENT", "Event updated successfully",
-		"event_id", event.ID,
-		"user_id", event.UserID,
+		"event_id", req.EventID,
+		"username", existing.UserName,
 		"duration_ms", time.Since(start).Milliseconds())
 
-	return nil
+	response.UserName = existing.UserName
+	response.EventID = req.EventID
+	response.Title = req.Title
+	response.EventDatetime = req.Datetime
+	return response
 }
 
-func (s *EventService) DeleteEvent(event models.Event) error {
+func (s *EventService) DeleteEvent(req models.EventDeleteRequest) error {
 	start := time.Now()
 
 	s.logger.Debug("SERVICE_DELETE_EVENT", "Starting event deletion",
-		"event_id", event.ID)
+		"event_id", req.EventID)
+
+	event := models.Event{
+		ID: req.EventID,
+	}
 
 	err := s.repo.DeleteEvent(event)
 	if err != nil {
 		s.logger.Error("SERVICE_DELETE_EVENT", "Failed to delete event",
 			"error", err,
-			"event_id", event.ID,
+			"event_id", req.EventID,
 			"duration_ms", time.Since(start).Milliseconds())
 		return err
 	}
 
 	s.logger.Info("SERVICE_DELETE_EVENT", "Event deleted successfully",
-		"event_id", event.ID,
+		"event_id", req.EventID,
 		"duration_ms", time.Since(start).Milliseconds())
 
 	return nil
 }
 
-func (s *EventService) GetDayEvents(userID string, date time.Time) ([]models.Event, error) {
+func (s *EventService) GetDayEvents(req models.EventsGetRequest) ([]models.Event, error) {
 	start := time.Now()
 
 	s.logger.Debug("SERVICE_GET_DAY_EVENTS", "Getting day events",
-		"user_id", userID,
-		"date", date)
+		"username", req.UserName,
+		"date", req.Date)
 
-	startRange := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	startRange := time.Date(req.Date.Year(), req.Date.Month(), req.Date.Day(), 0, 0, 0, 0, req.Date.Location())
 	end := startRange.Add(24 * time.Hour)
 
 	events, err := s.repo.GetByDateRange(startRange, end)
 	if err != nil {
 		s.logger.Error("SERVICE_GET_DAY_EVENTS", "Failed to get day events",
 			"error", err,
-			"user_id", userID,
-			"date", date,
+			"username", req.UserName,
+			"date", req.Date,
 			"duration_ms", time.Since(start).Milliseconds())
 		return nil, err
 	}
 
-	filteredEvents := s.filterEventsByUserID(events, userID)
+	filteredEvents := s.filterEventsByUserName(events, req.UserName)
 
 	s.logger.Info("SERVICE_GET_DAY_EVENTS", "Day events retrieved successfully",
-		"user_id", userID,
-		"date", date,
+		"username", req.UserName,
+		"date", req.Date,
 		"total_events", len(events),
 		"filtered_events", len(filteredEvents),
 		"duration_ms", time.Since(start).Milliseconds())
@@ -148,31 +194,31 @@ func (s *EventService) GetDayEvents(userID string, date time.Time) ([]models.Eve
 	return filteredEvents, nil
 }
 
-func (s *EventService) GetWeekEvents(userID string, startWeek time.Time) ([]models.Event, error) {
+func (s *EventService) GetWeekEvents(req models.EventsGetRequest) ([]models.Event, error) {
 	start := time.Now()
 
 	s.logger.Debug("SERVICE_GET_WEEK_EVENTS", "Getting week events",
-		"user_id", userID,
-		"start_week", startWeek)
+		"username", req.UserName,
+		"date", req.Date)
 
-	startRange := time.Date(startWeek.Year(), startWeek.Month(), startWeek.Day(), 0, 0, 0, 0, startWeek.Location())
+	startRange := time.Date(req.Date.Year(), req.Date.Month(), req.Date.Day(), 0, 0, 0, 0, req.Date.Location())
 	end := startRange.Add(7 * 24 * time.Hour)
 
 	events, err := s.repo.GetByDateRange(startRange, end)
 	if err != nil {
 		s.logger.Error("SERVICE_GET_WEEK_EVENTS", "Failed to get week events",
 			"error", err,
-			"user_id", userID,
-			"start_week", startWeek,
+			"username", req.UserName,
+			"date", req.Date,
 			"duration_ms", time.Since(start).Milliseconds())
 		return nil, err
 	}
 
-	filteredEvents := s.filterEventsByUserID(events, userID)
+	filteredEvents := s.filterEventsByUserName(events, req.UserName)
 
 	s.logger.Info("SERVICE_GET_WEEK_EVENTS", "Week events retrieved successfully",
-		"user_id", userID,
-		"start_week", startWeek,
+		"username", req.UserName,
+		"date", req.Date,
 		"total_events", len(events),
 		"filtered_events", len(filteredEvents),
 		"duration_ms", time.Since(start).Milliseconds())
@@ -180,31 +226,31 @@ func (s *EventService) GetWeekEvents(userID string, startWeek time.Time) ([]mode
 	return filteredEvents, nil
 }
 
-func (s *EventService) GetMonthEvents(userID string, startMonth time.Time) ([]models.Event, error) {
+func (s *EventService) GetMonthEvents(req models.EventsGetRequest) ([]models.Event, error) {
 	start := time.Now()
 
 	s.logger.Debug("SERVICE_GET_MONTH_EVENTS", "Getting month events",
-		"user_id", userID,
-		"start_month", startMonth)
+		"username", req.UserName,
+		"date", req.Date)
 
-	startRange := time.Date(startMonth.Year(), startMonth.Month(), 1, 0, 0, 0, 0, startMonth.Location())
+	startRange := time.Date(req.Date.Year(), req.Date.Month(), 1, 0, 0, 0, 0, req.Date.Location())
 	end := startRange.AddDate(0, 1, 0) // Следующий месяц
 
 	events, err := s.repo.GetByDateRange(startRange, end)
 	if err != nil {
 		s.logger.Error("SERVICE_GET_MONTH_EVENTS", "Failed to get month events",
 			"error", err,
-			"user_id", userID,
-			"start_month", startMonth,
+			"username", req.UserName,
+			"date", req.Date,
 			"duration_ms", time.Since(start).Milliseconds())
 		return nil, err
 	}
 
-	filteredEvents := s.filterEventsByUserID(events, userID)
+	filteredEvents := s.filterEventsByUserName(events, req.UserName)
 
 	s.logger.Info("SERVICE_GET_MONTH_EVENTS", "Month events retrieved successfully",
-		"user_id", userID,
-		"start_month", startMonth,
+		"username", req.UserName,
+		"date", req.Date,
 		"total_events", len(events),
 		"filtered_events", len(filteredEvents),
 		"duration_ms", time.Since(start).Milliseconds())
@@ -212,10 +258,10 @@ func (s *EventService) GetMonthEvents(userID string, startMonth time.Time) ([]mo
 	return filteredEvents, nil
 }
 
-func (s *EventService) filterEventsByUserID(events []models.Event, userID string) []models.Event {
+func (s *EventService) filterEventsByUserName(events []models.Event, userName string) []models.Event {
 	var filtered []models.Event
 	for _, event := range events {
-		if event.UserID == userID {
+		if event.UserName == userName {
 			filtered = append(filtered, event)
 		}
 	}

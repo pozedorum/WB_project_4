@@ -10,7 +10,7 @@
 - Создать структуру базы данных:
   - Таблица `events` с полями:
     - `id` (UUID, primary key)
-    - `user_id` (integer)
+    - `username` (integer)
     - `title` (text)
     - `description` (text)
     - `date` (date)
@@ -67,7 +67,7 @@ POST    /events/{id}/remind - установить напоминание
 ### Создание события (POST /events):
 ```json
 {
-  "user_id": 123,
+  "username": 123,
   "title": "Meeting",
   "description": "Team meeting",
   "date": "2024-01-15",
@@ -80,7 +80,7 @@ POST    /events/{id}/remind - установить напоминание
 ```json
 {
   "event_id": "uuid",
-  "user_id": 123,
+  "username": 123,
   "title": "Meeting",
   "reminder_time": "2024-01-15T14:00:00Z",
   "notification_type": "reminder"

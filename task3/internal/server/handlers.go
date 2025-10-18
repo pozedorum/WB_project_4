@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,16 +28,17 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 	}
 
 	// Валидация
-	if req.UserID == 0 {
-		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing user_id")
-		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyUserID.Error()})
+	if req.UserName == "" {
+		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing username")
+		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyUserName.Error()})
 		return
 	}
-	if req.Text == "" {
-		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing text")
-		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyText.Error()})
-		return
-	}
+	// пустой текст допустим
+	// if req.Text == "" {
+	// 	s.logger.Warn("HANDLER_CREATE_EVENT", "Missing text")
+	// 	c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyText.Error()})
+	// 	return
+	// }
 	if req.Datetime.IsZero() {
 		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing datetime")
 		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyDatetime.Error()})
@@ -46,14 +46,14 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 	}
 
 	s.logger.Info("HANDLER_CREATE_EVENT", "Processing event creation",
-		"user_id", req.UserID,
+		"username", req.UserName,
 		"title", req.Title,
 		"datetime", req.Datetime)
 
 	if resp = s.serv.CreateEvent(req); resp.Error != nil {
 		s.logger.Error("HANDLER_CREATE_EVENT", "Service layer error",
 			"error", resp.Error,
-			"user_id", req.UserID,
+			"username", req.UserName,
 			"title", req.Title)
 
 		switch resp.Error {
@@ -69,7 +69,7 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_CREATE_EVENT", "Event created successfully",
-		"user_id", req.UserID,
+		"username", req.UserName,
 		"event_id", resp.EventID,
 		"duration_ms", duration.Milliseconds())
 
@@ -124,7 +124,7 @@ func (s *EventServer) handleUpdateEvent(c *gin.Context) {
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_UPDATE_EVENT", "Event updated successfully",
 		"event_id", resp.EventID,
-		"user_id", resp.UserID,
+		"username", resp.UserName,
 		"duration_ms", duration.Milliseconds())
 
 	c.JSON(http.StatusOK, gin.H{
@@ -169,7 +169,7 @@ func (s *EventServer) handleDeleteEvent(c *gin.Context) {
 		"duration_ms", duration.Milliseconds())
 
 	c.JSON(http.StatusOK, gin.H{
-		"result": fmt.Sprintf("event #%s deleted successfully", req.EventID),
+		"result": fmt.Sprintf("event #%d deleted successfully", req.EventID),
 	})
 }
 
@@ -178,7 +178,7 @@ func (s *EventServer) handleGetDayEvents(c *gin.Context) {
 
 	s.logger.Debug("HANDLER_GET_DAY_EVENTS", "Starting get day events request")
 
-	userID, date, err := s.parseQueryParams(c)
+	userName, date, err := s.parseQueryParams(c)
 	if err != nil {
 		s.logger.Warn("HANDLER_GET_DAY_EVENTS", "Invalid query parameters",
 			"error", err,
@@ -186,16 +186,16 @@ func (s *EventServer) handleGetDayEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req := models.EventsGetRequest{UserID: userID, Date: date}
+	req := models.EventsGetRequest{UserName: userName, Date: date}
 	s.logger.Info("HANDLER_GET_DAY_EVENTS", "Processing day events request",
-		"user_id", userID,
+		"username", userName,
 		"date", date)
 
 	events, err := s.serv.GetDayEvents(req)
 	if err != nil {
 		s.logger.Error("HANDLER_GET_DAY_EVENTS", "Service layer error",
 			"error", err,
-			"user_id", userID,
+			"username", userName,
 			"date", date)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
@@ -203,7 +203,7 @@ func (s *EventServer) handleGetDayEvents(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_GET_DAY_EVENTS", "Day events retrieved successfully",
-		"user_id", userID,
+		"username", userName,
 		"date", date,
 		"events_count", len(events),
 		"duration_ms", duration.Milliseconds())
@@ -216,7 +216,7 @@ func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
 
 	s.logger.Debug("HANDLER_GET_WEEK_EVENTS", "Starting get week events request")
 
-	userID, date, err := s.parseQueryParams(c)
+	userName, date, err := s.parseQueryParams(c)
 	if err != nil {
 		s.logger.Warn("HANDLER_GET_WEEK_EVENTS", "Invalid query parameters",
 			"error", err,
@@ -224,16 +224,16 @@ func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req := models.EventsGetRequest{UserID: userID, Date: date}
+	req := models.EventsGetRequest{UserName: userName, Date: date}
 	s.logger.Info("HANDLER_GET_WEEK_EVENTS", "Processing week events request",
-		"user_id", req.UserID,
+		"username", req.UserName,
 		"date", req.Date)
 
 	events, err := s.serv.GetWeekEvents(req)
 	if err != nil {
 		s.logger.Error("HANDLER_GET_WEEK_EVENTS", "Service layer error",
 			"error", err,
-			"user_id", req.UserID,
+			"username", req.UserName,
 			"date", req.Date)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
@@ -241,7 +241,7 @@ func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_GET_WEEK_EVENTS", "Week events retrieved successfully",
-		"user_id", req.UserID,
+		"username", req.UserName,
 		"date", req.Date,
 		"events_count", len(events),
 		"duration_ms", duration.Milliseconds())
@@ -254,7 +254,7 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 
 	s.logger.Debug("HANDLER_GET_MONTH_EVENTS", "Starting get month events request")
 
-	userID, date, err := s.parseQueryParams(c)
+	userName, date, err := s.parseQueryParams(c)
 	if err != nil {
 		s.logger.Warn("HANDLER_GET_MONTH_EVENTS", "Invalid query parameters",
 			"error", err,
@@ -262,16 +262,16 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req := models.EventsGetRequest{UserID: userID, Date: date}
+	req := models.EventsGetRequest{UserName: userName, Date: date}
 	s.logger.Info("HANDLER_GET_MONTH_EVENTS", "Processing month events request",
-		"user_id", req.UserID,
+		"username", req.UserName,
 		"date", req.Date)
 
 	events, err := s.serv.GetMonthEvents(req)
 	if err != nil {
 		s.logger.Error("HANDLER_GET_MONTH_EVENTS", "Service layer error",
 			"error", err,
-			"user_id", req.UserID,
+			"username", req.UserName,
 			"date", req.Date)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
@@ -279,7 +279,7 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_GET_MONTH_EVENTS", "Month events retrieved successfully",
-		"user_id", req.UserID,
+		"username", req.UserName,
 		"date", req.Date,
 		"events_count", len(events),
 		"duration_ms", duration.Milliseconds())
@@ -288,21 +288,21 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 }
 
 // Вспомогательные методы
-func (s *EventServer) parseQueryParams(c *gin.Context) (int, time.Time, error) {
-	userID, err := strconv.Atoi(c.Query("user_id"))
-	if err != nil {
-		return 0, time.Time{}, fmt.Errorf("invalid userID: %v", err)
-	}
+func (s *EventServer) parseQueryParams(c *gin.Context) (string, time.Time, error) {
+	userName := c.Query("username")
+	// if err != nil {
+	// 	return 0, time.Time{}, fmt.Errorf("invalid userName: %v", err)
+	// }
 
 	dateStr := c.Query("date")
 	if dateStr == "" {
-		return 0, time.Time{}, models.ErrEmptyDatetime
+		return "", time.Time{}, models.ErrEmptyDatetime
 	}
 
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		return 0, time.Time{}, fmt.Errorf("invalid date format: %w", err)
+		return "", time.Time{}, fmt.Errorf("invalid date format: %w", err)
 	}
 
-	return userID, date, nil
+	return userName, date, nil
 }

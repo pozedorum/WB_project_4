@@ -20,7 +20,7 @@ func NewEventRepository(connStr string, logger interfaces.Logger) (*EventReposit
 	db, err := sqlx.Connect("postgres", connStr)
 	if err != nil {
 		logger.Error("REPO_INIT", "Failed to connect to database",
-			"error", err,
+			"error", err.Error(),
 			"connection_string", connStr)
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -45,7 +45,7 @@ func createTables(db *sqlx.DB, logger interfaces.Logger) error {
 	query := `
 	CREATE TABLE IF NOT EXISTS events (
 		id SERIAL PRIMARY KEY,
-		user_id VARCHAR(255) NOT NULL,
+		username VARCHAR(255) NOT NULL,
 		title VARCHAR(500),
 		text TEXT NOT NULL,
 		datetime TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -55,9 +55,9 @@ func createTables(db *sqlx.DB, logger interfaces.Logger) error {
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
+	CREATE INDEX IF NOT EXISTS idx_events_username ON events(username);
 	CREATE INDEX IF NOT EXISTS idx_events_datetime ON events(datetime);
-	CREATE INDEX IF NOT EXISTS idx_events_user_datetime ON events(user_id, datetime);
+	CREATE INDEX IF NOT EXISTS idx_events_user_datetime ON events(username, datetime);
 	`
 
 	start := time.Now()
@@ -66,7 +66,7 @@ func createTables(db *sqlx.DB, logger interfaces.Logger) error {
 
 	if err != nil {
 		logger.Error("REPO_CREATE_TABLES", "Failed to execute table creation query",
-			"error", err,
+			"error", err.Error(),
 			"duration_ms", duration.Milliseconds())
 		return err
 	}
@@ -80,21 +80,21 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 	start := time.Now()
 
 	query := `
-	INSERT INTO events (user_id, title, text, datetime, remind_before, is_archived)
-	VALUES (:user_id, :title, :text, :datetime, :remind_before, :is_archived)
+	INSERT INTO events (username, title, text, datetime, remind_before, is_archived)
+	VALUES (:username, :title, :text, :datetime, :remind_before, :is_archived)
 	RETURNING id
 	`
 
 	repo.logger.Debug("REPO_CREATE_EVENT", "Starting event creation",
-		"user_id", event.UserID,
+		"username", event.UserName,
 		"event_title", event.Title,
 		"datetime", event.Datetime)
 
 	rows, err := repo.db.NamedQuery(query, event)
 	if err != nil {
 		repo.logger.Error("REPO_CREATE_EVENT", "Failed to create event",
-			"error", err,
-			"user_id", event.UserID,
+			"error", err.Error(),
+			"username", event.UserName,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to create event: %w", err)
 	}
@@ -104,8 +104,8 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 		err = rows.Scan(&event.ID)
 		if err != nil {
 			repo.logger.Error("REPO_CREATE_EVENT", "Failed to get last insert ID",
-				"error", err,
-				"user_id", event.UserID,
+				"error", err.Error(),
+				"username", event.UserName,
 				"duration_ms", time.Since(start).Milliseconds())
 			return fmt.Errorf("failed to get last insert ID: %w", err)
 		}
@@ -114,7 +114,7 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 	duration := time.Since(start)
 	repo.logger.Info("REPO_CREATE_EVENT", "Event created successfully",
 		"event_id", event.ID,
-		"user_id", event.UserID,
+		"username", event.UserName,
 		"duration_ms", duration.Milliseconds())
 
 	return nil
@@ -125,7 +125,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 
 	query := `
 	UPDATE events 
-	SET user_id = :user_id,
+	SET username = :username,
 		title = :title,
 		text = :text, 
 		datetime = :datetime,
@@ -137,14 +137,14 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 
 	repo.logger.Debug("REPO_UPDATE_EVENT", "Starting event update",
 		"event_id", event.ID,
-		"user_id", event.UserID)
+		"username", event.UserName)
 
 	result, err := repo.db.NamedExec(query, event)
 	if err != nil {
 		repo.logger.Error("REPO_UPDATE_EVENT", "Failed to update event",
-			"error", err,
+			"error", err.Error(),
 			"event_id", event.ID,
-			"user_id", event.UserID,
+			"username", event.UserName,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to update event: %w", err)
 	}
@@ -152,7 +152,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		repo.logger.Error("REPO_UPDATE_EVENT", "Failed to get rows affected",
-			"error", err,
+			"error", err.Error(),
 			"event_id", event.ID,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to get rows affected: %w", err)
@@ -161,7 +161,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 	if rowsAffected == 0 {
 		repo.logger.Warn("REPO_UPDATE_EVENT", "Event not found for update",
 			"event_id", event.ID,
-			"user_id", event.UserID,
+			"username", event.UserName,
 			"duration_ms", time.Since(start).Milliseconds())
 		return models.Err503NotFound
 	}
@@ -169,7 +169,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 	duration := time.Since(start)
 	repo.logger.Info("REPO_UPDATE_EVENT", "Event updated successfully",
 		"event_id", event.ID,
-		"user_id", event.UserID,
+		"username", event.UserName,
 		"rows_affected", rowsAffected,
 		"duration_ms", duration.Milliseconds())
 
@@ -187,7 +187,7 @@ func (repo *EventRepository) DeleteEvent(event models.Event) error {
 	result, err := repo.db.Exec(query, event.ID)
 	if err != nil {
 		repo.logger.Error("REPO_DELETE_EVENT", "Failed to delete event",
-			"error", err,
+			"error", err.Error(),
 			"event_id", event.ID,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to delete event: %w", err)
@@ -196,7 +196,7 @@ func (repo *EventRepository) DeleteEvent(event models.Event) error {
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		repo.logger.Error("REPO_DELETE_EVENT", "Failed to get rows affected",
-			"error", err,
+			"error", err.Error(),
 			"event_id", event.ID,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to get rows affected: %w", err)
@@ -222,7 +222,7 @@ func (repo *EventRepository) GetByDateRange(startTime, endTime time.Time) ([]mod
 	start := time.Now()
 
 	query := `
-	SELECT id, user_id, title, text, datetime, remind_before, is_archived, created_at, updated_at
+	SELECT id, username, title, text, datetime, remind_before, is_archived, created_at, updated_at
 	FROM events 
 	WHERE datetime BETWEEN $1 AND $2 
 		AND is_archived = FALSE
@@ -237,7 +237,7 @@ func (repo *EventRepository) GetByDateRange(startTime, endTime time.Time) ([]mod
 	err := repo.db.Select(&events, query, startTime, endTime)
 	if err != nil {
 		repo.logger.Error("REPO_GET_BY_DATE_RANGE", "Failed to get events by date range",
-			"error", err,
+			"error", err.Error(),
 			"start", startTime,
 			"end", endTime,
 			"duration_ms", time.Since(start).Milliseconds())
@@ -258,7 +258,7 @@ func (repo *EventRepository) GetEventByID(id int) (*models.Event, error) {
 	start := time.Now()
 
 	query := `
-	SELECT id, user_id, title, text, datetime, remind_before, is_archived, created_at, updated_at
+	SELECT id, username, title, text, datetime, remind_before, is_archived, created_at, updated_at
 	FROM events 
 	WHERE id = $1
 	`
@@ -276,7 +276,7 @@ func (repo *EventRepository) GetEventByID(id int) (*models.Event, error) {
 			return nil, models.Err503NotFound
 		}
 		repo.logger.Error("REPO_GET_EVENT_BY_ID", "Failed to get event by ID",
-			"error", err,
+			"error", err.Error(),
 			"event_id", id,
 			"duration_ms", time.Since(start).Milliseconds())
 		return nil, fmt.Errorf("failed to get event by ID: %w", err)
@@ -285,7 +285,7 @@ func (repo *EventRepository) GetEventByID(id int) (*models.Event, error) {
 	duration := time.Since(start)
 	repo.logger.Info("REPO_GET_EVENT_BY_ID", "Event found successfully",
 		"event_id", id,
-		"user_id", event.UserID,
+		"username", event.UserName,
 		"duration_ms", duration.Milliseconds())
 
 	return &event, nil

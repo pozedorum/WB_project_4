@@ -22,7 +22,8 @@ type Container struct {
 
 func NewContainer(cfg *config.Config) (*Container, error) {
 	// Инициализируем логгер
-	logger, err := logger.NewLogger("event-service", "./logs/app.log")
+	logger, err := logger.NewLogger("event-service", "")
+	//	logger, err := logger.NewLogger("event-service", "./logs/app.log")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create logger: %w", err)
 	}
