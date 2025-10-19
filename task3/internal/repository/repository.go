@@ -45,7 +45,7 @@ func createTables(db *sqlx.DB, logger interfaces.Logger) error {
 	query := `
 	CREATE TABLE IF NOT EXISTS events (
 		id SERIAL PRIMARY KEY,
-		username VARCHAR(255) NOT NULL,
+		usertoken VARCHAR(255) NOT NULL,
 		title VARCHAR(500),
 		text TEXT NOT NULL,
 		datetime TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -55,9 +55,9 @@ func createTables(db *sqlx.DB, logger interfaces.Logger) error {
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_events_username ON events(username);
+	CREATE INDEX IF NOT EXISTS idx_events_usertoken ON events(usertoken);
 	CREATE INDEX IF NOT EXISTS idx_events_datetime ON events(datetime);
-	CREATE INDEX IF NOT EXISTS idx_events_user_datetime ON events(username, datetime);
+	CREATE INDEX IF NOT EXISTS idx_events_user_datetime ON events(usertoken, datetime);
 	`
 
 	start := time.Now()
@@ -80,13 +80,13 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 	start := time.Now()
 
 	query := `
-	INSERT INTO events (username, title, text, datetime, remind_before, is_archived)
-	VALUES (:username, :title, :text, :datetime, :remind_before, :is_archived)
+	INSERT INTO events (usertoken, title, text, datetime, remind_before, is_archived)
+	VALUES (:usertoken, :title, :text, :datetime, :remind_before, :is_archived)
 	RETURNING id
 	`
 
 	repo.logger.Debug("REPO_CREATE_EVENT", "Starting event creation",
-		"username", event.UserName,
+		"usertoken", event.UserToken,
 		"event_title", event.Title,
 		"datetime", event.Datetime)
 
@@ -94,7 +94,7 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 	if err != nil {
 		repo.logger.Error("REPO_CREATE_EVENT", "Failed to create event",
 			"error", err.Error(),
-			"username", event.UserName,
+			"usertoken", event.UserToken,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to create event: %w", err)
 	}
@@ -105,7 +105,7 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 		if err != nil {
 			repo.logger.Error("REPO_CREATE_EVENT", "Failed to get last insert ID",
 				"error", err.Error(),
-				"username", event.UserName,
+				"usertoken", event.UserToken,
 				"duration_ms", time.Since(start).Milliseconds())
 			return fmt.Errorf("failed to get last insert ID: %w", err)
 		}
@@ -114,7 +114,7 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 	duration := time.Since(start)
 	repo.logger.Info("REPO_CREATE_EVENT", "Event created successfully",
 		"event_id", event.ID,
-		"username", event.UserName,
+		"usertoken", event.UserToken,
 		"duration_ms", duration.Milliseconds())
 
 	return nil
@@ -125,7 +125,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 
 	query := `
 	UPDATE events 
-	SET username = :username,
+	SET usertoken = :usertoken,
 		title = :title,
 		text = :text, 
 		datetime = :datetime,
@@ -137,14 +137,14 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 
 	repo.logger.Debug("REPO_UPDATE_EVENT", "Starting event update",
 		"event_id", event.ID,
-		"username", event.UserName)
+		"usertoken", event.UserToken)
 
 	result, err := repo.db.NamedExec(query, event)
 	if err != nil {
 		repo.logger.Error("REPO_UPDATE_EVENT", "Failed to update event",
 			"error", err.Error(),
 			"event_id", event.ID,
-			"username", event.UserName,
+			"usertoken", event.UserToken,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to update event: %w", err)
 	}
@@ -161,7 +161,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 	if rowsAffected == 0 {
 		repo.logger.Warn("REPO_UPDATE_EVENT", "Event not found for update",
 			"event_id", event.ID,
-			"username", event.UserName,
+			"usertoken", event.UserToken,
 			"duration_ms", time.Since(start).Milliseconds())
 		return models.Err503NotFound
 	}
@@ -169,7 +169,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 	duration := time.Since(start)
 	repo.logger.Info("REPO_UPDATE_EVENT", "Event updated successfully",
 		"event_id", event.ID,
-		"username", event.UserName,
+		"usertoken", event.UserToken,
 		"rows_affected", rowsAffected,
 		"duration_ms", duration.Milliseconds())
 
@@ -222,7 +222,7 @@ func (repo *EventRepository) GetByDateRange(startTime, endTime time.Time) ([]mod
 	start := time.Now()
 
 	query := `
-	SELECT id, username, title, text, datetime, remind_before, is_archived, created_at, updated_at
+	SELECT id, usertoken, title, text, datetime, remind_before, is_archived, created_at, updated_at
 	FROM events 
 	WHERE datetime BETWEEN $1 AND $2 
 		AND is_archived = FALSE
@@ -258,7 +258,7 @@ func (repo *EventRepository) GetEventByID(id int) (*models.Event, error) {
 	start := time.Now()
 
 	query := `
-	SELECT id, username, title, text, datetime, remind_before, is_archived, created_at, updated_at
+	SELECT id, usertoken, title, text, datetime, remind_before, is_archived, created_at, updated_at
 	FROM events 
 	WHERE id = $1
 	`
@@ -285,7 +285,7 @@ func (repo *EventRepository) GetEventByID(id int) (*models.Event, error) {
 	duration := time.Since(start)
 	repo.logger.Info("REPO_GET_EVENT_BY_ID", "Event found successfully",
 		"event_id", id,
-		"username", event.UserName,
+		"usertoken", event.UserToken,
 		"duration_ms", duration.Milliseconds())
 
 	return &event, nil

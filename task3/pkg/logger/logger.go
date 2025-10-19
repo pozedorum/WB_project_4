@@ -1,3 +1,4 @@
+// Package logger содержит структуру логирующую все слои микросервиса
 package logger
 
 import (
@@ -20,10 +21,10 @@ import (
 	}
 */
 var (
-	Level_Info  = false
-	Level_Debug = true
-	Level_Warn  = false
-	Level_Error = true
+	LevelInfo  = false
+	LevelDebug = true
+	LevelWarn  = false
+	LevelError = true
 )
 
 type Logger struct {
@@ -92,25 +93,25 @@ func (l *Logger) processLogs() {
 
 // Методы для логирования
 func (l *Logger) Debug(operation, message string, keyvals ...interface{}) {
-	if Level_Debug {
+	if LevelDebug {
 		l.log(l.zerolog.Debug(), operation, message, keyvals...)
 	}
 }
 
 func (l *Logger) Info(operation, message string, keyvals ...interface{}) {
-	if Level_Info {
+	if LevelInfo {
 		l.log(l.zerolog.Info(), operation, message, keyvals...)
 	}
 }
 
 func (l *Logger) Warn(operation, message string, keyvals ...interface{}) {
-	if Level_Warn {
+	if LevelWarn {
 		l.log(l.zerolog.Warn(), operation, message, keyvals...)
 	}
 }
 
 func (l *Logger) Error(operation, message string, keyvals ...interface{}) {
-	if Level_Error {
+	if LevelError {
 		l.log(l.zerolog.Error(), operation, message, keyvals...)
 	}
 }

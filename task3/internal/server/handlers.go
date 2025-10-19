@@ -28,9 +28,9 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 	}
 
 	// Валидация
-	if req.UserName == "" {
-		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing username")
-		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyUserName.Error()})
+	if req.UserToken == "" {
+		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing usertoken")
+		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyUserToken.Error()})
 		return
 	}
 	// пустой текст допустим
@@ -46,14 +46,14 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 	}
 
 	s.logger.Info("HANDLER_CREATE_EVENT", "Processing event creation",
-		"username", req.UserName,
+		"usertoken", req.UserToken,
 		"title", req.Title,
 		"datetime", req.Datetime)
 
 	if resp = s.serv.CreateEvent(req); resp.Error != nil {
 		s.logger.Error("HANDLER_CREATE_EVENT", "Service layer error",
 			"error", resp.Error,
-			"username", req.UserName,
+			"usertoken", req.UserToken,
 			"title", req.Title)
 
 		switch resp.Error {
@@ -69,7 +69,7 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_CREATE_EVENT", "Event created successfully",
-		"username", req.UserName,
+		"usertoken", req.UserToken,
 		"event_id", resp.EventID,
 		"duration_ms", duration.Milliseconds())
 
@@ -124,7 +124,7 @@ func (s *EventServer) handleUpdateEvent(c *gin.Context) {
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_UPDATE_EVENT", "Event updated successfully",
 		"event_id", resp.EventID,
-		"username", resp.UserName,
+		"usertoken", resp.UserToken,
 		"duration_ms", duration.Milliseconds())
 
 	c.JSON(http.StatusOK, gin.H{
@@ -178,7 +178,7 @@ func (s *EventServer) handleGetDayEvents(c *gin.Context) {
 
 	s.logger.Debug("HANDLER_GET_DAY_EVENTS", "Starting get day events request")
 
-	userName, date, err := s.parseQueryParams(c)
+	userToken, date, err := s.parseQueryParams(c)
 	if err != nil {
 		s.logger.Warn("HANDLER_GET_DAY_EVENTS", "Invalid query parameters",
 			"error", err,
@@ -186,16 +186,16 @@ func (s *EventServer) handleGetDayEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req := models.EventsGetRequest{UserName: userName, Date: date}
+	req := models.EventsGetRequest{UserToken: userToken, Date: date}
 	s.logger.Info("HANDLER_GET_DAY_EVENTS", "Processing day events request",
-		"username", userName,
+		"usertoken", userToken,
 		"date", date)
 
 	events, err := s.serv.GetDayEvents(req)
 	if err != nil {
 		s.logger.Error("HANDLER_GET_DAY_EVENTS", "Service layer error",
 			"error", err,
-			"username", userName,
+			"usertoken", userToken,
 			"date", date)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
@@ -203,7 +203,7 @@ func (s *EventServer) handleGetDayEvents(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_GET_DAY_EVENTS", "Day events retrieved successfully",
-		"username", userName,
+		"usertoken", userToken,
 		"date", date,
 		"events_count", len(events),
 		"duration_ms", duration.Milliseconds())
@@ -216,7 +216,7 @@ func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
 
 	s.logger.Debug("HANDLER_GET_WEEK_EVENTS", "Starting get week events request")
 
-	userName, date, err := s.parseQueryParams(c)
+	userToken, date, err := s.parseQueryParams(c)
 	if err != nil {
 		s.logger.Warn("HANDLER_GET_WEEK_EVENTS", "Invalid query parameters",
 			"error", err,
@@ -224,16 +224,16 @@ func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req := models.EventsGetRequest{UserName: userName, Date: date}
+	req := models.EventsGetRequest{UserToken: userToken, Date: date}
 	s.logger.Info("HANDLER_GET_WEEK_EVENTS", "Processing week events request",
-		"username", req.UserName,
+		"usertoken", req.UserToken,
 		"date", req.Date)
 
 	events, err := s.serv.GetWeekEvents(req)
 	if err != nil {
 		s.logger.Error("HANDLER_GET_WEEK_EVENTS", "Service layer error",
 			"error", err,
-			"username", req.UserName,
+			"usertoken", req.UserToken,
 			"date", req.Date)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
@@ -241,7 +241,7 @@ func (s *EventServer) handleGetWeekEvents(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_GET_WEEK_EVENTS", "Week events retrieved successfully",
-		"username", req.UserName,
+		"usertoken", req.UserToken,
 		"date", req.Date,
 		"events_count", len(events),
 		"duration_ms", duration.Milliseconds())
@@ -254,7 +254,7 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 
 	s.logger.Debug("HANDLER_GET_MONTH_EVENTS", "Starting get month events request")
 
-	userName, date, err := s.parseQueryParams(c)
+	userToken, date, err := s.parseQueryParams(c)
 	if err != nil {
 		s.logger.Warn("HANDLER_GET_MONTH_EVENTS", "Invalid query parameters",
 			"error", err,
@@ -262,16 +262,16 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req := models.EventsGetRequest{UserName: userName, Date: date}
+	req := models.EventsGetRequest{UserToken: userToken, Date: date}
 	s.logger.Info("HANDLER_GET_MONTH_EVENTS", "Processing month events request",
-		"username", req.UserName,
+		"usertoken", req.UserToken,
 		"date", req.Date)
 
 	events, err := s.serv.GetMonthEvents(req)
 	if err != nil {
 		s.logger.Error("HANDLER_GET_MONTH_EVENTS", "Service layer error",
 			"error", err,
-			"username", req.UserName,
+			"usertoken", req.UserToken,
 			"date", req.Date)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": models.Err500InternalError.Error()})
 		return
@@ -279,7 +279,7 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 
 	duration := time.Since(start)
 	s.logger.Info("HANDLER_GET_MONTH_EVENTS", "Month events retrieved successfully",
-		"username", req.UserName,
+		"usertoken", req.UserToken,
 		"date", req.Date,
 		"events_count", len(events),
 		"duration_ms", duration.Milliseconds())
@@ -289,9 +289,9 @@ func (s *EventServer) handleGetMonthEvents(c *gin.Context) {
 
 // Вспомогательные методы
 func (s *EventServer) parseQueryParams(c *gin.Context) (string, time.Time, error) {
-	userName := c.Query("username")
+	userToken := c.Query("usertoken")
 	// if err != nil {
-	// 	return 0, time.Time{}, fmt.Errorf("invalid userName: %v", err)
+	// 	return 0, time.Time{}, fmt.Errorf("invalid userToken: %v", err)
 	// }
 
 	dateStr := c.Query("date")
@@ -304,5 +304,5 @@ func (s *EventServer) parseQueryParams(c *gin.Context) (string, time.Time, error
 		return "", time.Time{}, fmt.Errorf("invalid date format: %w", err)
 	}
 
-	return userName, date, nil
+	return userToken, date, nil
 }

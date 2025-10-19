@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pozedorum/WB_project_4/task3/internal/interfaces"
+	"github.com/pozedorum/WB_project_4/task3/internal/reminder"
 	"github.com/pozedorum/WB_project_4/task3/internal/repository"
 	"github.com/pozedorum/WB_project_4/task3/internal/server"
 	"github.com/pozedorum/WB_project_4/task3/internal/service"
@@ -14,10 +15,11 @@ import (
 )
 
 type Container struct {
-	repo    interfaces.Repository
-	service interfaces.Service
-	server  interfaces.Server
-	logger  interfaces.Logger
+	repo     interfaces.Repository
+	service  interfaces.Service
+	server   interfaces.Server
+	reminder interfaces.Reminder
+	logger   interfaces.Logger
 }
 
 func NewContainer(cfg *config.Config) (*Container, error) {
@@ -38,18 +40,30 @@ func NewContainer(cfg *config.Config) (*Container, error) {
 	}
 	logger.Info("CONTAINER_INIT", "Repository initialized successfully")
 
+	reminderService, err := reminder.NewService(reminder.Config{
+		RabbitMQURL:   cfg.RabbitMQ.URL,
+		QueueName:     cfg.RabbitMQ.QueueName,
+		ExchangeName:  cfg.RabbitMQ.Exchange,
+		TelegramToken: cfg.Telegram.Token,
+	}, logger)
+	if err != nil {
+		logger.Error("INIT", "Failed to initialize reminder service", "error", err)
+		panic(err)
+	}
+
 	// Передаем логгер в сервис
-	service := service.NewEventService(repo, logger)
+	service := service.NewEventService(repo, reminderService, logger)
 	logger.Info("CONTAINER_INIT", "Service initialized successfully")
 
 	server := server.NewEventServer(cfg.Server.Port, service, logger)
 	logger.Info("CONTAINER_INIT", "Server initialized successfully")
 
 	return &Container{
-		repo:    repo,
-		service: service,
-		server:  server,
-		logger:  logger,
+		repo:     repo,
+		service:  service,
+		server:   server,
+		reminder: reminderService,
+		logger:   logger,
 	}, nil
 }
 
@@ -65,6 +79,7 @@ func (c *Container) Shutdown() error {
 	if err != nil {
 		errors = append(errors, err)
 	}
+	c.reminder.Shutdown()
 	err = c.repo.Close()
 	if err != nil {
 		errors = append(errors, err)
