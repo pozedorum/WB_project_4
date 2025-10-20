@@ -28,9 +28,6 @@
 # Сборка и запуск
 make build
 make run
-
-# Или напрямую
-docker-compose up -d
 ```
 
 Сервис будет доступен по адресу: http://localhost:8080
