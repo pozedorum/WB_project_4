@@ -252,9 +252,11 @@ docker exec -it rabbitmq-1 rabbitmqctl list_queues name messages_ready messages_
 
 Для изменения количества логов меняйте переменные в пакете pkg/logger.go
 По умолчанию стоят:
+```go
 var (
 	LevelInfo  = true
 	LevelDebug = false
 	LevelWarn  = true
 	LevelError = true
 )
+```
