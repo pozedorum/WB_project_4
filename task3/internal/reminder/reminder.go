@@ -16,26 +16,15 @@ type reminderService struct {
 	shutdownChan   chan struct{}
 }
 
-type Config struct {
-	RabbitMQURL   string
-	QueueName     string
-	ExchangeName  string
-	TelegramToken string
-}
-
-func NewService(cfg Config, logger interfaces.Logger) (interfaces.Reminder, error) {
+func NewService(RabbitMQURL string, QueueName string, TelegramToken string, logger interfaces.Logger) (interfaces.Reminder, error) {
 	// Инициализация RabbitMQ клиента
-	queueClient, err := NewRabbitMQClient(RabbitMQConfig{
-		URL:       cfg.RabbitMQURL,
-		QueueName: cfg.QueueName,
-		Exchange:  cfg.ExchangeName,
-	})
+	queueClient, err := NewRabbitMQClient(RabbitMQURL, QueueName, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RabbitMQ client: %w", err)
 	}
 
 	// Инициализация Telegram клиента
-	telegramClient, err := NewTelegramClient(cfg.TelegramToken)
+	telegramClient, err := NewTelegramClient(TelegramToken)
 	if err != nil {
 		queueClient.Close()
 		return nil, fmt.Errorf("failed to create Telegram client: %w", err)
@@ -49,17 +38,33 @@ func NewService(cfg Config, logger interfaces.Logger) (interfaces.Reminder, erro
 	}
 
 	logger.Info("REMINDER_SERVICE", "Service initialized successfully",
-		"queue", cfg.QueueName, "exchange", cfg.ExchangeName, "telegram_bot", telegramClient.GetBotInfo())
+		"queue", QueueName, "telegram_bot", telegramClient.GetBotInfo())
 
 	return service, nil
 }
 
 func (s *reminderService) ScheduleReminder(event models.Event) error {
-	if event.RemindBefore <= 0 || event.TelegramID == 0 {
-		return nil // Напоминание не требуется
+	if event.TelegramID == 0 {
+		s.logger.Debug("REMINDER_SCHEDULE", "Reminder not required - no TelegramID",
+			"event_id", event.ID, "telegram_id", event.TelegramID)
+		return nil
 	}
 
-	remindTime := event.Datetime.Add(-time.Duration(event.RemindBefore) * time.Minute)
+	// РАСЧЕТ ВРЕМЕНИ НАПОМИНАНИЯ:
+	var remindTime time.Time
+	if event.RemindBefore > 0 {
+		// Напоминание за N минут ДО события
+		remindTime = event.Datetime.Add(-time.Duration(event.RemindBefore) * time.Minute)
+		s.logger.Debug("REMINDER_SCHEDULE", "Timed reminder calculation",
+			"event_time", event.Datetime,
+			"remind_before_minutes", event.RemindBefore,
+			"remind_time", remindTime)
+	} else {
+		// Напоминание в МОМЕНТ события
+		remindTime = event.Datetime
+		s.logger.Debug("REMINDER_SCHEDULE", "Instant reminder at event time",
+			"event_time", event.Datetime)
+	}
 
 	message := models.ReminderMessage{
 		EventID:    event.ID,
@@ -71,17 +76,20 @@ func (s *reminderService) ScheduleReminder(event models.Event) error {
 	}
 
 	if err := s.queueClient.PublishReminder(message); err != nil {
+		s.logger.Error("REMINDER_SCHEDULE", "Failed to publish reminder",
+			"event_id", event.ID, "error", err)
 		return fmt.Errorf("failed to publish reminder: %w", err)
 	}
 
 	s.logger.Info("REMINDER_SCHEDULE", "Reminder scheduled successfully",
-		"event_id", event.ID, "notify_time", remindTime, "telegram_id", event.TelegramID)
+		"event_id", event.ID, "notify_time", remindTime,
+		"remind_type", map[bool]string{true: "timed", false: "instant"}[event.RemindBefore > 0],
+		"telegram_id", event.TelegramID)
 
 	return nil
 }
 
 func (s *reminderService) UpdateReminder(event models.Event) error {
-	// Для простоты пересоздаем напоминание
 	return s.ScheduleReminder(event)
 }
 
@@ -128,6 +136,9 @@ func (s *reminderService) processReminder(ctx context.Context, reminder models.R
 func (s *reminderService) Shutdown() {
 	s.logger.Info("REMINDER_SHUTDOWN", "Shutting down reminder service")
 	close(s.shutdownChan)
+	// Даем время для завершения обработки
+	time.Sleep(2 * time.Second)
+
 	s.queueClient.Close()
 	s.telegramClient.Close()
 	s.logger.Info("REMINDER_SHUTDOWN", "Reminder service shutdown completed")

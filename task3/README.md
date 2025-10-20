@@ -1,25 +1,315 @@
-# WB_project_2.18
+# Сервис Календаря Событий
 
+Микросервис для управления событиями с отложенными напоминаниями через Telegram.
 
-Для запуска сервера используйте команду `make run`
-Для заполнения календаря различными событиями (с разными датами) используйте `make create_many`
-Для проверки основного функционала есть следующие цели:
+## Основные возможности
+
+- **CRUD операции** для событий (создание, обновление, удаление, получение)
+- **Отложенные напоминания** через RabbitMQ DLX
+- **Telegram уведомления** с точным временем доставки
+- **Фильтрация событий** по дням, неделям и месяцам
+- **Асинхронная архитектура** с фоновыми воркерами
+- **Поддержка напоминаний** за N минут до события
+- **Логирование** с структурным форматом
+
+## Архитектура
+
+- **HTTP Server** - Gin framework с REST API
+- **PostgreSQL** - хранение событий
+- **RabbitMQ** - отложенная доставка напоминаний через DLX
+- **Telegram Bot** - отправка уведомлений
+- **Docker** - контейнеризация всех сервисов
+
+## Быстрый старт
+
+### 1. Запуск сервиса
+
+```bash
+# Сборка и запуск
+make build
+make run
+
+# Или напрямую
+docker-compose up -d
 ```
-make create_event
-make update_event
-make delete_event
+
+Сервис будет доступен по адресу: http://localhost:8080
+
+### 2. Настройка Telegram Bot
+
+1. Создайте бота через @BotFather
+2. Получите токен бота
+3. Добавьте токен в `docker-compose.yml`:
+
+```yaml
+environment:
+  - TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+```
+
+4. Получите ваш Chat ID:
+
+```bash
+./GetTelegramChatID.sh
+```
+
+### 3. Проверка здоровья
+
+```bash
+curl http://localhost:8080/health
+```
+
+## API Endpoints
+
+### Создание события
+```bash
+POST /create_event
+Content-Type: application/json
+
+{
+    "usertoken": "user123",
+    "title": "Встреча с командой",
+    "text": "Обсуждение нового проекта",
+    "datetime": "2025-12-22T15:00:00Z",
+    "telegram_id": 1105031510,
+    "remind_before": 5
+}
+```
+
+### Обновление события
+```bash
+POST /update_event
+Content-Type: application/json
+
+{
+    "event_id": 1,
+    "title": "Обновленная встреча",
+    "text": "Перенесено на другой зал",
+    "datetime": "2025-12-22T16:00:00Z",
+    "telegram_id": 1105031510,
+    "remind_before": 10
+}
+```
+
+### Удаление события
+```bash
+POST /delete_event
+Content-Type: application/json
+
+{
+    "event_id": 1
+}
+```
+
+### Получение событий
+
+```bash
+# События на день
+GET /events_for_day?usertoken=user123&date=2025-12-22
+
+# События на неделю  
+GET /events_for_week?usertoken=user123&date=2025-12-22
+
+# События на месяц
+GET /events_for_month?usertoken=user123&date=2025-12-01
+```
+
+## Напоминания (Reminders)
+
+### Параметр `remind_before`
+- **Тип**: целое число (минуты)
+- **Описание**: За сколько минут до события отправить напоминание
+- **Пример**: `5` = напоминание за 5 минут до события
+
+### Примеры использования
+
+```bash
+# Напоминание за 5 минут до события
+{
+    "remind_before": 5
+}
+
+# Напоминание за 1 час до события  
+{
+    "remind_before": 60
+}
+
+# Без напоминания (только запись в календаре)
+{
+    "remind_before": 0
+}
+```
+
+## Тестирование
+
+### Комплексное тестирование
+```bash
+# Все основные тесты
+./test_requests.sh
+
+# Тест отложенных напоминаний
+./testReminderWithDelay.sh
+
+# Тест разных интервалов напоминаний
+./json_remind_before.sh
+```
+
+### Использование Makefile
+
+```bash
+# Создание тестовых событий
+make create_many
+
+# Тестирование операций чтения
 make get_day_events
-make get_week_events
+make get_week_events  
 make get_month_events
-```
-Так же есть цель для проверки различных случаев с ошибками `make test_errors`
 
-Для проверки кода выполните следующую команду:
-```
-make lint
+# Тестирование ошибок
+make test_errors
+
+# Полный тестовый цикл
+make full_test
 ```
 
+### Тест отложенных напоминаний
 
-Для настройки сервера используется файл `.env`
-Я постарался реализовать оба формата запросов, логи по умолчанию кладутся и в файл и в stdout
-В файле .env можно отключить вывод логов в терминал
+```bash
+# Создание события с напоминанием через 1 минуту
+./testReminderWithDelay.sh
+```
+
+## Конфигурация
+
+### Переменные окружения
+
+```env
+# Server
+SERVER_PORT=8080
+
+# Database  
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=event_calendar
+DB_SSLMODE=disable
+
+# RabbitMQ
+RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+RABBITMQ_QUEUE=event-reminders
+
+# Telegram
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+```
+
+### Docker сервисы
+
+- **app**: Основное приложение (Go)
+- **postgres**: База данных PostgreSQL
+- **rabbitmq**: Очередь сообщений с DLX
+- **redis**: Кэширование (опционально)
+
+## Мониторинг
+
+### Логи приложения
+```bash
+# Просмотр логов в реальном времени
+make logs
+
+# Все логи
+docker-compose logs
+
+# Логи конкретного сервиса
+docker-compose logs app
+docker-compose logs rabbitmq
+docker-compose logs postgres
+```
+
+### Статус очередей RabbitMQ
+```bash
+docker exec -it rabbitmq-1 rabbitmqctl list_queues name messages_ready messages_unacknowledged
+```
+
+## Модели данных
+
+### Event
+```go
+type Event struct {
+    ID           int       `json:"id"`
+    UserToken    string    `json:"usertoken"`
+    TelegramID   int64     `json:"telegram_id" 
+    Title        string    `json:"title"`
+    Text         string    `json:"text"`
+    Datetime     time.Time `json:"datetime"`
+    RemindBefore int       `json:"remind_before"` // минуты
+}
+```
+
+## Workflow напоминаний
+
+1. **Создание события** → Сохранение в PostgreSQL
+2. **Планирование напоминания** → Отправка в RabbitMQ DLX очередь
+3. **Ожидание** → Сообщение ждет в DLX до истечения TTL
+4. **Доставка** → RabbitMQ перемещает сообщение в основную очередь
+5. **Обработка** → Воркер отправляет уведомление в Telegram
+6. **Уведомление** → Пользователь получает сообщение
+
+## Поиск проблем
+
+### Частые проблемы
+
+**Telegram бот не отправляет сообщения:**
+- Проверьте корректность токена бота
+- Убедитесь, что бот добавлен в чат
+- Проверьте Chat ID получателя
+
+**Напоминания не работают:**
+- Проверьте статус RabbitMQ: `docker-compose logs rabbitmq`
+- Убедитесь, что очередь создана: `docker exec -it rabbitmq-1 rabbitmqctl list_queues`
+- Проверьте логи приложения: `make logs`
+
+**Ошибки базы данных:**
+- Проверьте подключение к PostgreSQL
+- Убедитесь, что миграции выполнены
+
+### Режим отладки
+
+Для детального логирования установите:
+```env
+LOG_LEVEL=debug
+```
+
+## Лицензия
+
+MIT License
+
+## Участие в разработке
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+---
+
+## Makefile команды
+
+```bash
+# Основные команды
+make build    # Сборка контейнеров
+make run      # Запуск сервисов
+make stop     # Остановка сервисов
+make logs     # Просмотр логов приложения
+make clean    # Полная очистка
+
+# Тестирование
+make test_all           # Все тесты
+make create_many        # Создание тестовых событий
+make test_errors        # Тесты ошибок
+make test_reminder      # Тест напоминаний
+
+# Разработка
+make lint      # Проверка кода
+make rebuild   # Пересборка и перезапуск
+```

@@ -32,24 +32,23 @@ type Repository interface {
 	GetByDateRange(start, end time.Time) ([]models.Event, error)
 	GetEventByID(id int) (*models.Event, error)
 	Close() error
+
+	ArchiveOldEvents(threshold time.Time) (int, error)
+	GetArchivedEvents() ([]models.Event, error)
+	CleanupArchivedEvents(beforeTime time.Time) (int, error)
 }
 
 // Reminder определяет интерфейс сервиса напоминаний
 type Reminder interface {
-	// ScheduleReminder создает напоминание для события
 	ScheduleReminder(event models.Event) error
-
-	// UpdateReminder обновляет существующее напоминание
 	UpdateReminder(event models.Event) error
-
-	// CancelReminder отменяет напоминание
 	CancelReminder(eventID int) error
-
-	// StartWorker запускает фоновый воркер для обработки напоминаний
 	StartWorker(ctx context.Context) error
-
-	// Shutdown корректно останавливает сервис
 	Shutdown()
+}
+
+type Archiver interface {
+	Start(ctx context.Context)
 }
 
 // TelegramClient определяет интерфейс для Telegram клиента

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,18 +28,30 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 		return
 	}
 
+	// Парсинг remind_before из query параметра (если не передан в JSON)
+	if req.RemindBefore == 0 {
+		remindBeforeStr := c.Query("remind_before")
+		if remindBeforeStr != "" {
+			parsedMinutes, err := s.parseRemindBeforeToMinutes(remindBeforeStr)
+			if err != nil {
+				s.logger.Warn("HANDLER_CREATE_EVENT", "Invalid remind_before format",
+					"remind_before", remindBeforeStr, "error", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			req.RemindBefore = parsedMinutes
+			s.logger.Debug("HANDLER_CREATE_EVENT", "Parsed remind_before from query",
+				"original", remindBeforeStr, "parsed_minutes", req.RemindBefore)
+		}
+	}
+
 	// Валидация
 	if req.UserToken == "" {
 		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing usertoken")
 		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyUserToken.Error()})
 		return
 	}
-	// пустой текст допустим
-	// if req.Text == "" {
-	// 	s.logger.Warn("HANDLER_CREATE_EVENT", "Missing text")
-	// 	c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyText.Error()})
-	// 	return
-	// }
+
 	if req.Datetime.IsZero() {
 		s.logger.Warn("HANDLER_CREATE_EVENT", "Missing datetime")
 		c.JSON(http.StatusBadRequest, gin.H{"error": models.Err400EmptyDatetime.Error()})
@@ -48,7 +61,8 @@ func (s *EventServer) handleCreateEvent(c *gin.Context) {
 	s.logger.Info("HANDLER_CREATE_EVENT", "Processing event creation",
 		"usertoken", req.UserToken,
 		"title", req.Title,
-		"datetime", req.Datetime)
+		"datetime", req.Datetime,
+		"remind_before_minutes", req.RemindBefore)
 
 	if resp = s.serv.CreateEvent(req); resp.Error != nil {
 		s.logger.Error("HANDLER_CREATE_EVENT", "Service layer error",
@@ -95,6 +109,23 @@ func (s *EventServer) handleUpdateEvent(c *gin.Context) {
 		return
 	}
 
+	// Парсинг remind_before из query параметра (если не передан в JSON)
+	if req.RemindBefore == 0 {
+		remindBeforeStr := c.Query("remind_before")
+		if remindBeforeStr != "" {
+			parsedMinutes, err := s.parseRemindBeforeToMinutes(remindBeforeStr)
+			if err != nil {
+				s.logger.Warn("HANDLER_UPDATE_EVENT", "Invalid remind_before format",
+					"remind_before", remindBeforeStr, "error", err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			req.RemindBefore = parsedMinutes
+			s.logger.Debug("HANDLER_UPDATE_EVENT", "Parsed remind_before from query",
+				"original", remindBeforeStr, "parsed_minutes", req.RemindBefore)
+		}
+	}
+
 	// Валидация
 	if req.EventID == 0 {
 		s.logger.Warn("HANDLER_UPDATE_EVENT", "Missing event ID")
@@ -104,7 +135,8 @@ func (s *EventServer) handleUpdateEvent(c *gin.Context) {
 
 	s.logger.Info("HANDLER_UPDATE_EVENT", "Processing event update",
 		"event_id", req.EventID,
-		"title", req.Title)
+		"title", req.Title,
+		"remind_before_minutes", req.RemindBefore)
 
 	if resp = s.serv.UpdateEvent(req); resp.Error != nil {
 		s.logger.Error("HANDLER_UPDATE_EVENT", "Service layer error",
@@ -305,4 +337,27 @@ func (s *EventServer) parseQueryParams(c *gin.Context) (string, time.Time, error
 	}
 
 	return userToken, date, nil
+}
+
+func (s *EventServer) parseRemindBeforeToMinutes(remindBeforeStr string) (int, error) {
+	if remindBeforeStr == "" {
+		return 0, nil
+	}
+
+	// Пробуем распарсить как число (минуты)
+	if minutes, err := strconv.Atoi(remindBeforeStr); err == nil {
+		return minutes, nil
+	}
+
+	// Пробуем распарсить как duration string и конвертировать в минуты
+	if duration, err := time.ParseDuration(remindBeforeStr); err == nil {
+		minutes := int(duration / time.Minute)
+		if minutes == 0 && duration > 0 {
+			// Если duration меньше минуты, округляем до 1 минуты
+			minutes = 1
+		}
+		return minutes, nil
+	}
+
+	return 0, fmt.Errorf("invalid remind_before format: %s (expected minutes number or duration string like '1h30m')", remindBeforeStr)
 }

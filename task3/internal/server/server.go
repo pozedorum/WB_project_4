@@ -33,6 +33,7 @@ func NewEventServer(port string, service interfaces.Service, logger interfaces.L
 }
 
 func (s *EventServer) setupRoutes() {
+	s.router.GET("/health", s.handleHealthCheck)
 	// CRUD операции для событий
 	s.router.POST("/create_event", s.handleCreateEvent)
 	s.router.POST("/update_event", s.handleUpdateEvent)
@@ -50,4 +51,8 @@ func (s *EventServer) Start() error {
 func (s *EventServer) Shutdown(ctx context.Context) error {
 	s.logger.Info("SERVER_SHUTDOWN", "Initiating server shutdown")
 	return s.server.Shutdown(ctx)
+}
+
+func (s *EventServer) handleHealthCheck(c *gin.Context) {
+	c.JSON(200, gin.H{"status": "ok"})
 }

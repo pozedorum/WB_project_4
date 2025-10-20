@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pozedorum/WB_project_4/task3/internal/interfaces"
 )
 
@@ -14,6 +14,10 @@ type telegramClient struct {
 }
 
 func NewTelegramClient(token string) (interfaces.TelegramClient, error) {
+	if token == "" {
+		return nil, fmt.Errorf("telegram bot token is required")
+	}
+
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Telegram bot: %w", err)
@@ -53,7 +57,10 @@ func (c *telegramClient) SendMessage(ctx context.Context, chatID int64, text str
 }
 
 func (c *telegramClient) GetBotInfo() string {
-	return c.bot.Self.UserName
+	if c.bot != nil {
+		return fmt.Sprintf("@%s", c.bot.Self.UserName)
+	}
+	return "telegram-bot"
 }
 
 func (c *telegramClient) Close() {

@@ -4,208 +4,365 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/pozedorum/WB_project_4/task3/internal/interfaces"
 	"github.com/pozedorum/WB_project_4/task3/internal/models"
-	"github.com/pozedorum/WB_project_4/task3/pkg/config"
-	"github.com/pozedorum/wbf/rabbitmq" // Замени на актуальный путь
-	"github.com/pozedorum/wbf/retry"
-	"github.com/rabbitmq/amqp091-go"
+	"github.com/streadway/amqp"
 )
 
 type rabbitMQClient struct {
-	conn         *rabbitmq.Connection
-	channel      *rabbitmq.Channel
-	publisher    *rabbitmq.Publisher
-	queueManager *rabbitmq.QueueManager
-	exchange     *rabbitmq.Exchange
-	queueName    string
+	conn            *amqp.Connection
+	channel         *amqp.Channel
+	queueName       string
+	dlxExchangeName string
+	dlxQueueName    string
+	logger          interfaces.Logger
 }
 
-func NewRabbitMQClient(cfg config.RabbitMQConfig) (interfaces.QueueClient, error) {
+func NewRabbitMQClient(url string, queueName string, logger interfaces.Logger) (interfaces.QueueClient, error) {
+	logger.Info("RABBITMQ_INIT", "Initializing RabbitMQ client",
+		"url", url, "queue", queueName)
+
 	// Устанавливаем соединение с RabbitMQ
-	conn, err := rabbitmq.Connect(cfg.URL, 5, 2*time.Second)
+	conn, err := amqp.Dial(url)
 	if err != nil {
+		logger.Error("RABBITMQ_INIT", "Failed to connect to RabbitMQ",
+			"error", err, "url", url)
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}
+	logger.Info("RABBITMQ_INIT", "Connected to RabbitMQ successfully")
 
 	// Создаем канал
 	ch, err := conn.Channel()
 	if err != nil {
-		conn.Close()
+
+		err2 := conn.Close()
+
+		logger.Error("RABBITMQ_INIT", "Failed to create channel",
+			"error", err)
+		if err2 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close connection",
+				"error", err2)
+		}
 		return nil, fmt.Errorf("failed to create channel: %w", err)
 	}
+	logger.Info("RABBITMQ_INIT", "Channel created successfully")
 
-	// Создаем обменник
-	exchange := rabbitmq.NewExchange(cfg.Exchange, "direct")
-	exchange.Durable = true
+	// Имена для DLX
+	dlxExchangeName := queueName + "_dlx"
+	dlxQueueName := queueName + "_delayed"
 
-	if err = exchange.BindToChannel(ch); err != nil {
-		ch.Close()
-		conn.Close()
-		return nil, fmt.Errorf("failed to declare exchange: %w", err)
-	}
-
-	// Создаем менеджер очередей
-	queueManager := rabbitmq.NewQueueManager(ch)
-
-	// Объявляем ОДНУ основную очередь с DLX
-	queue, err := queueManager.DeclareQueue(cfg.QueueName, rabbitmq.QueueConfig{
-		Durable:    true,
-		AutoDelete: false,
-		Exclusive:  false,
-		NoWait:     false,
-		Args: amqp091.Table{
-			// DLX для обработки сообщений с истекшим TTL
-			"x-dead-letter-exchange":    cfg.Exchange,
-			"x-dead-letter-routing-key": "reminders.process", // routing key для обработки после TTL
-		},
-	})
+	// 1. Сначала создаем DLX exchange
+	err = ch.ExchangeDeclare(
+		dlxExchangeName,
+		"direct", // type
+		true,     // durable
+		false,    // autoDelete
+		false,    // internal
+		false,    // noWait
+		nil,      // args
+	)
 	if err != nil {
-		ch.Close()
-		conn.Close()
+		err2, err3 := ch.Close(), conn.Close()
+		logger.Error("RABBITMQ_INIT", "Failed to declare DLX exchange",
+			"error", err, "exchange", dlxExchangeName)
+		if err2 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close channel",
+				"error", err2)
+		}
+		if err3 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close connection",
+				"error", err3)
+		}
+		return nil, fmt.Errorf("failed to declare DLX exchange: %w", err)
+	}
+	logger.Info("RABBITMQ_INIT", "DLX exchange declared",
+		"exchange", dlxExchangeName)
+
+	// 2. Создаем DLX очередь для отложенных сообщений
+	_, err = ch.QueueDeclare(
+		dlxQueueName,
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		amqp.Table{
+			"x-dead-letter-exchange":    "",                         // Используем default exchange
+			"x-dead-letter-routing-key": queueName,                  // возвращаем в основную очередь
+			"x-message-ttl":             int32(24 * 60 * 60 * 1000), // 24 часа макс TTL
+		},
+	)
+	if err != nil {
+		logger.Error("RABBITMQ_INIT", "Failed to declare DLX queue",
+			"error", err, "queue", dlxQueueName)
+		err2, err3 := ch.Close(), conn.Close()
+
+		if err2 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close channel",
+				"error", err2)
+		}
+		if err3 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close connection",
+				"error", err3)
+		}
+		return nil, fmt.Errorf("failed to declare DLX queue: %w", err)
+	}
+	logger.Info("RABBITMQ_INIT", "DLX queue declared",
+		"queue", dlxQueueName)
+
+	// 3. Привязываем DLX очередь к DLX exchange
+	err = ch.QueueBind(
+		dlxQueueName,
+		"", // routing key
+		dlxExchangeName,
+		false,
+		nil,
+	)
+	if err != nil {
+		err2, err3 := ch.Close(), conn.Close()
+
+		if err2 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close channel",
+				"error", err2)
+		}
+		if err3 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close connection",
+				"error", err3)
+		}
+		return nil, fmt.Errorf("failed to bind DLX queue: %w", err)
+	}
+	logger.Info("RABBITMQ_INIT", "DLX queue bound to exchange",
+		"queue", dlxQueueName, "exchange", dlxExchangeName)
+
+	// 4. Создаем основную очередь (куда будут возвращаться сообщения после TTL)
+	_, err = ch.QueueDeclare(
+		queueName,
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		nil,   // args
+	)
+	if err != nil {
+		logger.Error("RABBITMQ_INIT", "Failed to declare main queue",
+			"error", err, "queue", queueName)
+		err2, err3 := ch.Close(), conn.Close()
+
+		if err2 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close channel",
+				"error", err2)
+		}
+		if err3 != nil {
+			logger.Error("RABBITMQ_INIT", "Failed to close connection",
+				"error", err3)
+		}
 		return nil, fmt.Errorf("failed to declare queue: %w", err)
 	}
-
-	// Привязываем основную очередь к обменнику для отложенных сообщений
-	err = ch.QueueBind(
-		queue.Name,
-		"reminders.delayed", // routing key для отложенных сообщений
-		cfg.Exchange,
-		false,
-		nil,
-	)
-	if err != nil {
-		ch.Close()
-		conn.Close()
-		return nil, fmt.Errorf("failed to bind delayed queue: %w", err)
-	}
-
-	// Привязываем ТУ ЖЕ очередь к обменнику для немедленной обработки
-	err = ch.QueueBind(
-		queue.Name,
-		"reminders.process", // routing key для обработки после TTL
-		cfg.Exchange,
-		false,
-		nil,
-	)
-	if err != nil {
-		ch.Close()
-		conn.Close()
-		return nil, fmt.Errorf("failed to bind process queue: %w", err)
-	}
-
-	// Создаем публикатор
-	publisher := rabbitmq.NewPublisher(ch, cfg.Exchange)
+	logger.Info("RABBITMQ_INIT", "Main queue declared",
+		"queue", queueName)
 
 	client := &rabbitMQClient{
-		conn:         conn,
-		channel:      ch,
-		publisher:    publisher,
-		queueManager: queueManager,
-		exchange:     exchange,
-		queueName:    cfg.QueueName,
+		conn:            conn,
+		channel:         ch,
+		queueName:       queueName,
+		dlxExchangeName: dlxExchangeName,
+		dlxQueueName:    dlxQueueName,
+		logger:          logger,
 	}
 
+	logger.Info("RABBITMQ_INIT", "RabbitMQ client initialized successfully")
 	return client, nil
 }
 
 func (c *rabbitMQClient) PublishReminder(reminder models.ReminderMessage) error {
 	jsonData, err := json.Marshal(reminder)
 	if err != nil {
+		c.logger.Error("RABBITMQ_PUBLISH", "Failed to marshal reminder",
+			"error", err, "event_id", reminder.EventID)
 		return fmt.Errorf("failed to marshal reminder: %w", err)
 	}
 
-	// Вычисляем задержку для напоминания
 	now := time.Now()
-	var routingKey string
-	var options []rabbitmq.PublishingOptions
+	var expiration string
 
 	if reminder.NotifyTime.After(now) {
-		// Если напоминание в будущем - отправляем в отложенную очередь
+		// Напоминание в будущем - устанавливаем TTL
 		delay := reminder.NotifyTime.Sub(now)
-		routingKey = "reminders.delayed"
-
-		options = []rabbitmq.PublishingOptions{
-			{
-				Expiration: delay,
-			},
-		}
+		expiration = fmt.Sprintf("%d", delay.Milliseconds())
+		c.logger.Debug("RABBITMQ_PUBLISH", "Scheduling future reminder",
+			"event_id", reminder.EventID,
+			"delay_ms", delay.Milliseconds(),
+			"notify_time", reminder.NotifyTime)
 	} else {
-		// Если напоминание уже должно быть отправлено - отправляем сразу
-		routingKey = "reminders.immediate"
+		// Напоминание сейчас или в прошлом - минимальный TTL
+		expiration = "1000" // 1 секунда
+		c.logger.Debug("RABBITMQ_PUBLISH", "Scheduling immediate reminder",
+			"event_id", reminder.EventID)
 	}
 
-	// Публикуем сообщение с ретраями
-	strategy := retry.Strategy{
-		Attempts: 3,
-		Delay:    1 * time.Second,
-	}
-
-	return c.publisher.PublishWithRetry(
-		jsonData,
-		routingKey,
-		"application/json",
-		strategy,
-		options...,
+	// ВАЖНО: Публикуем в DLX очередь с TTL
+	err = c.channel.Publish(
+		"",             // exchange (default)
+		c.dlxQueueName, // DLX очередь для ожидания
+		false,          // mandatory
+		false,          // immediate
+		amqp.Publishing{
+			ContentType:  "application/json",
+			Body:         jsonData,
+			Expiration:   expiration, // TTL для отложенной доставки
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    now,
+			Headers: amqp.Table{
+				"x-event-id":    reminder.EventID,
+				"x-notify-time": reminder.NotifyTime,
+			},
+		},
 	)
+	if err != nil {
+		c.logger.Error("RABBITMQ_PUBLISH", "Failed to publish reminder",
+			"error", err, "event_id", reminder.EventID, "dlx_queue", c.dlxQueueName)
+		return fmt.Errorf("failed to publish reminder: %w", err)
+	}
+
+	c.logger.Info("RABBITMQ_PUBLISH", "Reminder published to DLX queue",
+		"event_id", reminder.EventID,
+		"dlx_queue", c.dlxQueueName,
+		"expiration_ms", expiration,
+		"notify_time", reminder.NotifyTime,
+		"current_time", now)
+
+	return nil
 }
 
+// Остальные методы (StartConsuming, processMessage, Close) остаются без изменений
 func (c *rabbitMQClient) StartConsuming(ctx context.Context, handler func(models.ReminderMessage) error) error {
-	// Создаем консьюмер
-	consumerConfig := rabbitmq.NewConsumerConfig(c.queueName)
-	consumerConfig.AutoAck = false // Ручное подтверждение
-	consumerConfig.Consumer = "reminder-worker"
+	c.logger.Info("RABBITMQ_CONSUME", "Starting consumer",
+		"queue", c.queueName) // Потребляем из ОСНОВНОЙ очереди
 
-	consumer := rabbitmq.NewConsumer(c.channel, consumerConfig)
+	// Настраиваем QoS - только одно сообщение в обработке за раз
+	err := c.channel.Qos(
+		1,     // prefetch count
+		0,     // prefetch size
+		false, // global
+	)
+	if err != nil {
+		c.logger.Error("RABBITMQ_CONSUME", "Failed to set QoS",
+			"error", err)
+		return fmt.Errorf("failed to set QoS: %w", err)
+	}
 
-	// Канал для получения сообщений
-	msgChan := make(chan []byte, 100)
+	// Начинаем потребление сообщений из ОСНОВНОЙ очереди
+	msgs, err := c.channel.Consume(
+		c.queueName,       // Основная очередь
+		"reminder-worker", // consumer
+		false,             // autoAck (ручное подтверждение)
+		false,             // exclusive
+		false,             // noLocal
+		false,             // noWait
+		nil,               // args
+	)
+	if err != nil {
+		c.logger.Error("RABBITMQ_CONSUME", "Failed to start consuming",
+			"error", err, "queue", c.queueName)
+		return fmt.Errorf("failed to start consuming: %w", err)
+	}
 
-	// Запускаем потребление в горутине
+	c.logger.Info("RABBITMQ_CONSUME", "Consumer started successfully",
+		"queue", c.queueName)
+
+	// Обрабатываем сообщения
 	go func() {
-		strategy := retry.Strategy{
-			Attempts: 5,
-			Delay:    2 * time.Second,
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				c.logger.Error("RABBITMQ_CONSUME", "Consumer panic",
+					"panic", r)
+			}
+		}()
 
-		if err := consumer.ConsumeWithRetry(msgChan, strategy); err != nil {
-			log.Printf("Failed to start consumer: %v", err)
+		for {
+			select {
+			case <-ctx.Done():
+				c.logger.Info("RABBITMQ_CONSUME", "Consumer stopped by context")
+				return
+
+			case msg, ok := <-msgs:
+				if !ok {
+					c.logger.Info("RABBITMQ_CONSUME", "Messages channel closed")
+					return
+				}
+
+				// Обрабатываем сообщение
+				c.processMessage(msg, handler)
+			}
 		}
 	}()
 
-	// Обрабатываем сообщения
-	for {
-		select {
-		case <-ctx.Done():
-			close(msgChan)
-			return ctx.Err()
-		case msgBody, ok := <-msgChan:
-			if !ok {
-				return fmt.Errorf("message channel closed")
-			}
+	return nil
+}
 
-			var reminder models.ReminderMessage
-			if err := json.Unmarshal(msgBody, &reminder); err != nil {
-				log.Printf("Failed to unmarshal reminder message: %v", err)
-				continue
-			}
+func (c *rabbitMQClient) processMessage(delivery amqp.Delivery, handler func(models.ReminderMessage) error) {
+	var reminder models.ReminderMessage
 
-			if err := handler(reminder); err != nil {
-				log.Printf("Failed to process reminder: %v", err)
-				// В production системе здесь должна быть логика повторной обработки или перемещения в DLQ
-			}
+	c.logger.Debug("RABBITMQ_PROCESS", "Received message",
+		"message_id", delivery.MessageId,
+		"body_size", len(delivery.Body),
+		"headers", delivery.Headers)
+
+	if err := json.Unmarshal(delivery.Body, &reminder); err != nil {
+		c.logger.Error("RABBITMQ_PROCESS", "Failed to unmarshal reminder",
+			"error", err, "message_id", delivery.MessageId)
+		// Подтверждаем даже при ошибке парсинга, чтобы не застревало
+		if err := delivery.Ack(false); err != nil {
+			c.logger.Error("RABBITMQ_PROCESS", "Failed to execute ack command",
+				"error", err)
+		}
+		return
+	}
+
+	c.logger.Info("RABBITMQ_PROCESS", "Processing reminder",
+		"event_id", reminder.EventID,
+		"notify_time", reminder.NotifyTime,
+		"telegram_id", reminder.TelegramID)
+
+	// Обрабатываем напоминание
+	if err := handler(reminder); err != nil {
+		c.logger.Error("RABBITMQ_PROCESS", "Failed to process reminder",
+			"error", err, "event_id", reminder.EventID)
+		// Перепотребляем при ошибке обработки
+		if err := delivery.Nack(false, true); err != nil {
+			c.logger.Error("RABBITMQ_PROCESS", "Failed to execute nack command",
+				"error", err)
+		}
+	} else {
+		c.logger.Info("RABBITMQ_PROCESS", "Successfully processed reminder",
+			"event_id", reminder.EventID)
+		// Подтверждаем успешную обработку
+		if err := delivery.Ack(false); err != nil {
+			c.logger.Error("RABBITMQ_PROCESS", "Failed to execute ack command",
+				"error", err)
 		}
 	}
 }
 
 func (c *rabbitMQClient) Close() {
+	c.logger.Info("RABBITMQ_CLOSE", "Closing RabbitMQ client")
+
 	if c.channel != nil {
-		c.channel.Close()
+		if err := c.channel.Close(); err != nil {
+			c.logger.Error("RABBITMQ_CLOSE", "Failed to close channel",
+				"error", err)
+		} else {
+			c.logger.Info("RABBITMQ_CLOSE", "Channel closed successfully")
+		}
 	}
+
 	if c.conn != nil {
-		c.conn.Close()
+		if err := c.conn.Close(); err != nil {
+			c.logger.Error("RABBITMQ_CLOSE", "Failed to close connection",
+				"error", err)
+		} else {
+			c.logger.Info("RABBITMQ_CLOSE", "Connection closed successfully")
+		}
 	}
 }

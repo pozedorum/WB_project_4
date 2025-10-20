@@ -43,10 +43,11 @@ func (s *EventService) CreateEvent(req models.EventCreateRequest) models.EventRe
 
 	event := models.Event{
 		UserToken:    req.UserToken,
+		TelegramID:   req.TelegramID,
 		Title:        req.Title,
 		Text:         req.Text,
 		Datetime:     req.Datetime,
-		RemindBefore: int(req.RemindBefore / time.Second),
+		RemindBefore: req.RemindBefore,
 		IsArchived:   false,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -57,17 +58,24 @@ func (s *EventService) CreateEvent(req models.EventCreateRequest) models.EventRe
 		s.logger.Error("SERVICE_CREATE_EVENT", "Failed to create event",
 			"error", err,
 			"usertoken", req.UserToken,
+			"telegram_id", req.TelegramID,
 			"title", req.Title,
 			"duration_ms", time.Since(start).Milliseconds())
 		response.Error = err
 		return response
 	}
 
-	if event.RemindBefore > 0 && req.TelegramID != 0 {
+	if req.TelegramID != 0 {
+		// ЕСЛИ есть telegram_id - создаем напоминание в любом случае
 		if err := s.reminder.ScheduleReminder(event); err != nil {
 			s.logger.Warn("SERVICE_CREATE_EVENT", "Failed to schedule reminder",
 				"event_id", event.ID, "error", err)
+			// НЕ прерываем создание события из-за ошибки напоминания
 		}
+	} else if req.RemindBefore > 0 {
+		// ЕСЛИ нет telegram_id, НО есть remind_before - предупреждение
+		s.logger.Warn("SERVICE_CREATE_EVENT", "Reminder skipped - TelegramID required for timed reminders",
+			"usertoken", req.UserToken, "remind_before", req.RemindBefore)
 	}
 
 	s.logger.Info("SERVICE_CREATE_EVENT", "Event created successfully",
@@ -88,6 +96,7 @@ func (s *EventService) UpdateEvent(req models.EventUpdateRequest) models.EventRe
 
 	s.logger.Debug("SERVICE_UPDATE_EVENT", "Starting event update",
 		"event_id", req.EventID,
+		"telegram_id", req.TelegramID,
 		"title", req.Title)
 
 	// Проверяем существование события
@@ -112,11 +121,12 @@ func (s *EventService) UpdateEvent(req models.EventUpdateRequest) models.EventRe
 
 	event := models.Event{
 		ID:           req.EventID,
-		UserToken:    existing.UserToken, // UserToken не меняется при обновлении
+		UserToken:    existing.UserToken,
+		TelegramID:   req.TelegramID,
 		Title:        req.Title,
 		Text:         req.Text,
 		Datetime:     req.Datetime,
-		RemindBefore: int(req.RemindBefore / time.Second),
+		RemindBefore: req.RemindBefore,
 		IsArchived:   existing.IsArchived,
 		CreatedAt:    existing.CreatedAt,
 		UpdatedAt:    time.Now(),
@@ -132,7 +142,7 @@ func (s *EventService) UpdateEvent(req models.EventUpdateRequest) models.EventRe
 		return response
 	}
 
-	if event.RemindBefore > 0 && existing.TelegramID != 0 {
+	if req.TelegramID != 0 {
 		if err := s.reminder.UpdateReminder(event); err != nil {
 			s.logger.Warn("SERVICE_UPDATE_EVENT", "Failed to update reminder",
 				"event_id", event.ID, "error", err)

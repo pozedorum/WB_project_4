@@ -4,8 +4,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -34,7 +32,6 @@ type DatabaseConfig struct {
 type RabbitMQConfig struct {
 	URL       string
 	QueueName string
-	Exchange  string
 }
 
 type TelegramConfig struct {
@@ -73,7 +70,6 @@ func Load() *Config {
 		RabbitMQ: RabbitMQConfig{
 			URL:       getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 			QueueName: getEnv("RABBITMQ_QUEUE", "event-reminders"),
-			Exchange:  getEnv("RABBITMQ_EXCHANGE", "reminders-exchange"),
 		},
 		Telegram: TelegramConfig{
 			Token: getEnv("TELEGRAM_BOT_TOKEN", ""),
@@ -89,27 +85,27 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-func getEnvAsInt(key string, defaultValue int) int {
-	valueStr := getEnv(key, "")
-	if value, err := strconv.Atoi(valueStr); err == nil {
-		return value
-	}
-	return defaultValue
-}
+// func getEnvAsInt(key string, defaultValue int) int {
+// 	valueStr := getEnv(key, "")
+// 	if value, err := strconv.Atoi(valueStr); err == nil {
+// 		return value
+// 	}
+// 	return defaultValue
+// }
 
-func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
-	valueStr := getEnv(key, "")
-	if value, err := time.ParseDuration(valueStr); err == nil {
-		return value
-	}
-	return defaultValue
-}
+// func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
+// 	valueStr := getEnv(key, "")
+// 	if value, err := time.ParseDuration(valueStr); err == nil {
+// 		return value
+// 	}
+// 	return defaultValue
+// }
 
-func getEnvAsSlice(key string, defaultValue []string, sep string) []string {
-	valStr := getEnv(key, "")
-	if valStr == "" {
-		return defaultValue
-	}
-	val := strings.Split(valStr, sep)
-	return val
-}
+// func getEnvAsSlice(key string, defaultValue []string, sep string) []string {
+// 	valStr := getEnv(key, "")
+// 	if valStr == "" {
+// 		return defaultValue
+// 	}
+// 	val := strings.Split(valStr, sep)
+// 	return val
+// }

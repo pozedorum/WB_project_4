@@ -46,6 +46,7 @@ func createTables(db *sqlx.DB, logger interfaces.Logger) error {
 	CREATE TABLE IF NOT EXISTS events (
 		id SERIAL PRIMARY KEY,
 		usertoken VARCHAR(255) NOT NULL,
+		telegram_id BIGINT DEFAULT 0,
 		title VARCHAR(500),
 		text TEXT NOT NULL,
 		datetime TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -80,13 +81,14 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 	start := time.Now()
 
 	query := `
-	INSERT INTO events (usertoken, title, text, datetime, remind_before, is_archived)
-	VALUES (:usertoken, :title, :text, :datetime, :remind_before, :is_archived)
-	RETURNING id
-	`
+    INSERT INTO events (usertoken, telegram_id, title, text, datetime, remind_before, is_archived)
+    VALUES (:usertoken, :telegram_id, :title, :text, :datetime, :remind_before, :is_archived)
+    RETURNING id
+    `
 
 	repo.logger.Debug("REPO_CREATE_EVENT", "Starting event creation",
 		"usertoken", event.UserToken,
+		"telegram_id", event.TelegramID,
 		"event_title", event.Title,
 		"datetime", event.Datetime)
 
@@ -95,10 +97,15 @@ func (repo *EventRepository) CreateEvent(event models.Event) error {
 		repo.logger.Error("REPO_CREATE_EVENT", "Failed to create event",
 			"error", err.Error(),
 			"usertoken", event.UserToken,
+			"telegram_id", event.TelegramID,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to create event: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			repo.logger.Error("REPO_CREATE_EVENT", "failed to close sql rows", "error", err)
+		}
+	}()
 
 	if rows.Next() {
 		err = rows.Scan(&event.ID)
@@ -124,20 +131,22 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 	start := time.Now()
 
 	query := `
-	UPDATE events 
-	SET usertoken = :usertoken,
-		title = :title,
-		text = :text, 
-		datetime = :datetime,
-		remind_before = :remind_before,
-		is_archived = :is_archived,
-		updated_at = NOW()
-	WHERE id = :id
-	`
+    UPDATE events 
+    SET usertoken = :usertoken,
+        telegram_id = :telegram_id,
+        title = :title,
+        text = :text, 
+        datetime = :datetime,
+        remind_before = :remind_before,
+        is_archived = :is_archived,
+        updated_at = NOW()
+    WHERE id = :id
+    `
 
 	repo.logger.Debug("REPO_UPDATE_EVENT", "Starting event update",
 		"event_id", event.ID,
-		"usertoken", event.UserToken)
+		"usertoken", event.UserToken,
+		"telegram_id", event.TelegramID)
 
 	result, err := repo.db.NamedExec(query, event)
 	if err != nil {
@@ -145,6 +154,7 @@ func (repo *EventRepository) UpdateEvent(event models.Event) error {
 			"error", err.Error(),
 			"event_id", event.ID,
 			"usertoken", event.UserToken,
+			"telegram_id", event.TelegramID,
 			"duration_ms", time.Since(start).Milliseconds())
 		return fmt.Errorf("failed to update event: %w", err)
 	}
@@ -222,12 +232,12 @@ func (repo *EventRepository) GetByDateRange(startTime, endTime time.Time) ([]mod
 	start := time.Now()
 
 	query := `
-	SELECT id, usertoken, title, text, datetime, remind_before, is_archived, created_at, updated_at
-	FROM events 
-	WHERE datetime BETWEEN $1 AND $2 
-		AND is_archived = FALSE
-	ORDER BY datetime ASC
-	`
+    SELECT id, usertoken, telegram_id, title, text, datetime, remind_before, is_archived, created_at, updated_at
+    FROM events 
+    WHERE datetime BETWEEN $1 AND $2 
+        AND is_archived = FALSE
+    ORDER BY datetime ASC
+    `
 
 	repo.logger.Debug("REPO_GET_BY_DATE_RANGE", "Starting date range query",
 		"start", startTime,
@@ -258,10 +268,10 @@ func (repo *EventRepository) GetEventByID(id int) (*models.Event, error) {
 	start := time.Now()
 
 	query := `
-	SELECT id, usertoken, title, text, datetime, remind_before, is_archived, created_at, updated_at
-	FROM events 
-	WHERE id = $1
-	`
+    SELECT id, usertoken, telegram_id, title, text, datetime, remind_before, is_archived, created_at, updated_at
+    FROM events 
+    WHERE id = $1
+    `
 
 	repo.logger.Debug("REPO_GET_EVENT_BY_ID", "Starting event lookup by ID",
 		"event_id", id)
@@ -300,4 +310,109 @@ func (repo *EventRepository) Close() error {
 	}
 	repo.logger.Info("REPO_CLOSE", "Database connection closed successfully")
 	return nil
+}
+
+func (repo *EventRepository) ArchiveOldEvents(threshold time.Time) (int, error) {
+	start := time.Now()
+
+	query := `
+    UPDATE events 
+    SET is_archived = true,
+        updated_at = NOW()
+    WHERE datetime < $1 
+        AND is_archived = false
+    `
+
+	repo.logger.Debug("REPO_ARCHIVE_OLD_EVENTS", "Starting archive old events",
+		"threshold", threshold)
+
+	result, err := repo.db.Exec(query, threshold)
+	if err != nil {
+		repo.logger.Error("REPO_ARCHIVE_OLD_EVENTS", "Failed to archive old events",
+			"error", err.Error(),
+			"threshold", threshold,
+			"duration_ms", time.Since(start).Milliseconds())
+		return 0, fmt.Errorf("failed to archive old events: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		repo.logger.Error("REPO_ARCHIVE_OLD_EVENTS", "Failed to get rows affected",
+			"error", err.Error(),
+			"duration_ms", time.Since(start).Milliseconds())
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	duration := time.Since(start)
+	repo.logger.Info("REPO_ARCHIVE_OLD_EVENTS", "Old events archived successfully",
+		"archived_count", rowsAffected,
+		"threshold", threshold,
+		"duration_ms", duration.Milliseconds())
+
+	return int(rowsAffected), nil
+}
+
+// GetArchivedEvents возвращает архивированные события
+func (repo *EventRepository) GetArchivedEvents() ([]models.Event, error) {
+	start := time.Now()
+
+	query := `
+    SELECT id, usertoken, telegram_id, title, text, datetime, remind_before, is_archived, created_at, updated_at
+    FROM events 
+    WHERE is_archived = TRUE
+    ORDER BY datetime DESC
+    `
+
+	repo.logger.Debug("REPO_GET_ARCHIVED_EVENTS", "Starting archived events query")
+
+	var events []models.Event
+	err := repo.db.Select(&events, query)
+	if err != nil {
+		repo.logger.Error("REPO_GET_ARCHIVED_EVENTS", "Failed to get archived events",
+			"error", err.Error(),
+			"duration_ms", time.Since(start).Milliseconds())
+		return nil, fmt.Errorf("failed to get archived events: %w", err)
+	}
+
+	duration := time.Since(start)
+	repo.logger.Info("REPO_GET_ARCHIVED_EVENTS", "Archived events query completed",
+		"events_count", len(events),
+		"duration_ms", duration.Milliseconds())
+
+	return events, nil
+}
+
+// CleanupArchivedEvents удаляет архивированные события старше указанной даты
+func (repo *EventRepository) CleanupArchivedEvents(beforeTime time.Time) (int, error) {
+	start := time.Now()
+
+	query := `DELETE FROM events WHERE is_archived = TRUE AND datetime < $1`
+
+	repo.logger.Debug("REPO_CLEANUP_ARCHIVED", "Starting cleanup of archived events",
+		"before_time", beforeTime)
+
+	result, err := repo.db.Exec(query, beforeTime)
+	if err != nil {
+		repo.logger.Error("REPO_CLEANUP_ARCHIVED", "Failed to cleanup archived events",
+			"error", err.Error(),
+			"before_time", beforeTime,
+			"duration_ms", time.Since(start).Milliseconds())
+		return 0, fmt.Errorf("failed to cleanup archived events: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		repo.logger.Error("REPO_CLEANUP_ARCHIVED", "Failed to get rows affected",
+			"error", err.Error(),
+			"duration_ms", time.Since(start).Milliseconds())
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	duration := time.Since(start)
+	repo.logger.Info("REPO_CLEANUP_ARCHIVED", "Archived events cleanup completed",
+		"deleted_count", rowsAffected,
+		"before_time", beforeTime,
+		"duration_ms", duration.Milliseconds())
+
+	return int(rowsAffected), nil
 }

@@ -6,7 +6,7 @@ import "time"
 type Event struct {
 	ID           int       `json:"id" form:"id" db:"id"`
 	UserToken    string    `json:"usertoken" form:"usertoken" db:"usertoken" binding:"required"`
-	TelegramID   int64     `json:"telegram_id" form:"telegram_id"`
+	TelegramID   int64     `json:"telegram_id" form:"telegram_id" db:"telegram_id"`
 	Title        string    `json:"title" form:"title" db:"title" binding:"required"`
 	Text         string    `json:"text" form:"text" db:"text"`
 	Datetime     time.Time `json:"datetime" form:"datetime" db:"datetime" binding:"required"`
@@ -28,21 +28,21 @@ type ReminderMessage struct {
 }
 
 type EventCreateRequest struct {
-	UserToken    string        `json:"usertoken" form:"usertoken" binding:"required"`
-	TelegramID   int64         `json:"telegram_id" form:"telegram_id"`
-	Title        string        `json:"title" form:"title" binding:"required"`
-	Text         string        `json:"text" form:"text"`
-	Datetime     time.Time     `json:"datetime" form:"datetime" binding:"required"`
-	RemindBefore time.Duration `json:"remind_before" form:"remind_before"`
+	UserToken    string    `json:"usertoken" form:"usertoken" binding:"required"`
+	TelegramID   int64     `json:"telegram_id" form:"telegram_id"`
+	Title        string    `json:"title" form:"title" binding:"required"`
+	Text         string    `json:"text" form:"text"`
+	Datetime     time.Time `json:"datetime" form:"datetime" binding:"required"`
+	RemindBefore int       `json:"remind_before" form:"remind_before"`
 }
 
 type EventUpdateRequest struct {
-	EventID      int           `json:"event_id" form:"event_id" binding:"required"`
-	TelegramID   int64         `json:"telegram_id" form:"telegram_id"`
-	Title        string        `json:"title" form:"title" binding:"required"`
-	Text         string        `json:"text" form:"text"`
-	Datetime     time.Time     `json:"datetime" form:"datetime" binding:"required"`
-	RemindBefore time.Duration `json:"remind_before" form:"remind_before"`
+	EventID      int       `json:"event_id" form:"event_id" binding:"required"`
+	TelegramID   int64     `json:"telegram_id" form:"telegram_id"`
+	Title        string    `json:"title" form:"title" binding:"required"`
+	Text         string    `json:"text" form:"text"`
+	Datetime     time.Time `json:"datetime" form:"datetime" binding:"required"`
+	RemindBefore int       `json:"remind_before" form:"remind_before"`
 }
 
 type EventDeleteRequest struct {
