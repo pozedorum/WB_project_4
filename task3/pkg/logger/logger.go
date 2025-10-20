@@ -21,9 +21,9 @@ import (
 	}
 */
 var (
-	LevelInfo  = false
-	LevelDebug = true
-	LevelWarn  = false
+	LevelInfo  = true
+	LevelDebug = false
+	LevelWarn  = true
 	LevelError = true
 )
 

@@ -45,12 +45,9 @@ docker-compose up -d
 environment:
   - TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 ```
+4. Напишите сообщение своему боту, а затем запустите скрипт `bash ./scripts/GetTelegramChatID.sh `
+5. Получите ваш Chat ID и вставьте его в :
 
-4. Получите ваш Chat ID:
-
-```bash
-./GetTelegramChatID.sh
-```
 
 ### 3. Проверка здоровья
 
@@ -144,14 +141,11 @@ GET /events_for_month?usertoken=user123&date=2025-12-01
 ### Комплексное тестирование
 ```bash
 # Все основные тесты
-./test_requests.sh
+bash ./scripts/full_cycle.sh
 
 # Тест отложенных напоминаний
-./testReminderWithDelay.sh
+./scripts/testReminderWithDelay.sh
 
-# Тест разных интервалов напоминаний
-./json_remind_before.sh
-```
 
 ### Использование Makefile
 
@@ -167,15 +161,13 @@ make get_month_events
 # Тестирование ошибок
 make test_errors
 
-# Полный тестовый цикл
-make full_test
 ```
 
 ### Тест отложенных напоминаний
 
 ```bash
 # Создание события с напоминанием через 1 минуту
-./testReminderWithDelay.sh
+bash ./scripts/testReminderWithDelay.sh
 ```
 
 ## Конфигурация
@@ -186,16 +178,16 @@ make full_test
 # Server
 SERVER_PORT=8080
 
-# Database  
-DB_HOST=postgres
+#Database
+DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=postgres
-DB_NAME=event_calendar
+DB_NAME=eventbooker
 DB_SSLMODE=disable
 
 # RabbitMQ
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+RABBITMQ_URL=amqp://guest:guest@localhost:5672/
 RABBITMQ_QUEUE=event-reminders
 
 # Telegram
@@ -230,20 +222,6 @@ docker-compose logs postgres
 docker exec -it rabbitmq-1 rabbitmqctl list_queues name messages_ready messages_unacknowledged
 ```
 
-## Модели данных
-
-### Event
-```go
-type Event struct {
-    ID           int       `json:"id"`
-    UserToken    string    `json:"usertoken"`
-    TelegramID   int64     `json:"telegram_id" 
-    Title        string    `json:"title"`
-    Text         string    `json:"text"`
-    Datetime     time.Time `json:"datetime"`
-    RemindBefore int       `json:"remind_before"` // минуты
-}
-```
 
 ## Workflow напоминаний
 
@@ -253,8 +231,6 @@ type Event struct {
 4. **Доставка** → RabbitMQ перемещает сообщение в основную очередь
 5. **Обработка** → Воркер отправляет уведомление в Telegram
 6. **Уведомление** → Пользователь получает сообщение
-
-## Поиск проблем
 
 ### Частые проблемы
 
@@ -274,42 +250,11 @@ type Event struct {
 
 ### Режим отладки
 
-Для детального логирования установите:
-```env
-LOG_LEVEL=debug
-```
-
-## Лицензия
-
-MIT License
-
-## Участие в разработке
-
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
----
-
-## Makefile команды
-
-```bash
-# Основные команды
-make build    # Сборка контейнеров
-make run      # Запуск сервисов
-make stop     # Остановка сервисов
-make logs     # Просмотр логов приложения
-make clean    # Полная очистка
-
-# Тестирование
-make test_all           # Все тесты
-make create_many        # Создание тестовых событий
-make test_errors        # Тесты ошибок
-make test_reminder      # Тест напоминаний
-
-# Разработка
-make lint      # Проверка кода
-make rebuild   # Пересборка и перезапуск
-```
+Для изменения количества логов меняйте переменные в пакете pkg/logger.go
+По умолчанию стоят:
+var (
+	LevelInfo  = true
+	LevelDebug = false
+	LevelWarn  = true
+	LevelError = true
+)

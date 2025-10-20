@@ -116,26 +116,3 @@ test_reminders_multiple:
 
 # Комплексные тесты
 test_errors: test_empty_usertoken test_empty_datetime test_not_found test_past_date
-
-test_all: create_many get_day_events get_week_events get_month_events test_errors test_reminder
-
-full_test:
-	@echo "\n=== ПОЛНЫЙ ТЕСТОВЫЙ ЦИКЛ ==="
-	@echo "1. Создание события..."
-	curl -s -X POST http://localhost:8080/create_event \
-  	-H "Content-Type: application/json" \
- 	-d '{"usertoken": "test_user", "datetime": "2025-11-22T15:00:00Z", "text": "Тест полного цикла", "title": "Полный цикл", "remind_before": 3, "telegram_id": 1105031510}' | jq .
-	
-	@echo "2. Получение событий на день..."
-	curl -s "http://localhost:8080/events_for_day?usertoken=test_user&date=2025-11-22" | jq .
-	
-	@echo "3. Обновление события..."
-	curl -s -X POST http://localhost:8080/update_event \
-  	-H "Content-Type: application/json" \
-  	-d '{"event_id": 5, "datetime": "2025-11-22T16:00:00Z", "text": "Обновленное событие полного цикла", "title": "Обновленный цикл", "remind_before": 5, "telegram_id": 1105031510}' | jq .
-	
-	@echo "4. Удаление события..."
-	curl -s -X POST http://localhost:8080/delete_event \
-  	-H "Content-Type: application/json" \
-  	-d '{"event_id": 5}' | jq .
-
