@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"runtime"
 	"time"
-
-	"github.com/pozedorum/WB_project_4/task4/internal/models"
 )
 
 type Analyzer struct {
@@ -28,11 +26,11 @@ func (a *Analyzer) PrintMemStats() {
 }
 
 // Collect собирает все метрики системы
-func (a *Analyzer) Collect() *models.SystemStats {
+func (a *Analyzer) Collect() *SystemStats {
 	var memStats *runtime.MemStats
 	runtime.ReadMemStats(memStats)
 
-	return &models.SystemStats{
+	return &SystemStats{
 		Memory:      a.collectMemoryStats(memStats),
 		GC:          a.collectGCStats(memStats),
 		Allocations: a.collectAllocationStats(memStats),
@@ -41,8 +39,8 @@ func (a *Analyzer) Collect() *models.SystemStats {
 	}
 }
 
-func (a *Analyzer) collectMemoryStats(stat *runtime.MemStats) *models.MemStats {
-	return &models.MemStats{
+func (a *Analyzer) collectMemoryStats(stat *runtime.MemStats) *MemStats {
+	return &MemStats{
 		Alloc:       stat.Alloc,
 		TotalAlloc:  stat.TotalAlloc,
 		Sys:         stat.Sys,
@@ -52,8 +50,8 @@ func (a *Analyzer) collectMemoryStats(stat *runtime.MemStats) *models.MemStats {
 	}
 }
 
-func (a *Analyzer) collectGCStats(stat *runtime.MemStats) *models.GCStats {
-	res := &models.GCStats{
+func (a *Analyzer) collectGCStats(stat *runtime.MemStats) *GCStats {
+	res := &GCStats{
 		NumGC:         stat.NumGC,
 		NumForcedGC:   stat.NumForcedGC,
 		LastGC:        time.Unix(0, int64(stat.LastGC)),
@@ -68,8 +66,8 @@ func (a *Analyzer) collectGCStats(stat *runtime.MemStats) *models.GCStats {
 	return res
 }
 
-func (a *Analyzer) collectAllocationStats(stat *runtime.MemStats) *models.AllocationStats {
-	return &models.AllocationStats{
+func (a *Analyzer) collectAllocationStats(stat *runtime.MemStats) *AllocationStats {
+	return &AllocationStats{
 		Mallocs:     stat.Mallocs,
 		Frees:       stat.Frees,
 		LiveObjects: stat.Mallocs - stat.Frees,

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Metrics Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="title">📊 Go Metrics Dashboard</h1>
+            <p class="subtitle">Real-time memory and garbage collector statistics</p>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="section">
+                <h2>📈 Quick Stats</h2>
+                <div class="button-grid">
+                    <button class="btn btn-primary" onclick="loadData('system')">
+                        <span class="btn-icon">⚡</span>
+                        System Overview
+                    </button>
+                    <button class="btn btn-secondary" onclick="loadData('allocations')">
+                        <span class="btn-icon">📝</span>
+                        Allocations
+                    </button>
+                    <button class="btn btn-success" onclick="loadData('gc')">
+                        <span class="btn-icon">🔄</span>
+                        Garbage Collector
+                    </button>
+                    <button class="btn btn-warning" onclick="loadData('memory')">
+                        <span class="btn-icon">💾</span>
+                        Memory Usage
+                    </button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>🧪 Test Actions</h2>
+                <div class="button-grid">
+                    <button class="btn btn-info" onclick="allocateMemory(1048576)">
+                        <span class="btn-icon">➕</span>
+                        Allocate 1MB
+                    </button>
+                    <button class="btn btn-info" onclick="allocateMemory(10485760)">
+                        <span class="btn-icon">➕</span>
+                        Allocate 10MB
+                    </button>
+                    <button class="btn btn-danger" onclick="clearResults()">
+                        <span class="btn-icon">🗑️</span>
+                        Clear Results
+                    </button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>🔗 Navigation</h2>
+                <div class="button-grid">
+                    <button class="btn btn-dark" onclick="openPrometheusPage()">
+                        <span class="btn-icon">📊</span>
+                        Prometheus Metrics
+                    </button>
+                    <button class="btn btn-light" onclick="refreshAll()">
+                        <span class="btn-icon">🔄</span>
+                        Refresh All Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+            <div class="section-header">
+                <h2>📋 Results</h2>
+                <div class="controls">
+                    <button class="btn btn-sm" onclick="toggleAllSections()" id="toggleAllBtn">
+                        Expand All
+                    </button>
+                    <button class="btn btn-sm" onclick="copyToClipboard()">
+                        Copy JSON
+                    </button>
+                </div>
+            </div>
+            
+            <div id="results">
+                <div class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <h3>No data loaded</h3>
+                    <p>Click on any button above to load metrics data</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timestamp -->
+        <div id="timestamp" class="timestamp"></div>
+    </div>
+
+    <script src="/static/js/scripts.js"></script>
+</body>
+</html>
