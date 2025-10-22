@@ -27,8 +27,8 @@ func (a *Analyzer) PrintMemStats() {
 
 // Collect собирает все метрики системы
 func (a *Analyzer) Collect() *SystemStats {
-	var memStats *runtime.MemStats
-	runtime.ReadMemStats(memStats)
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
 
 	return &SystemStats{
 		Memory:      a.collectMemoryStats(memStats),
@@ -39,7 +39,7 @@ func (a *Analyzer) Collect() *SystemStats {
 	}
 }
 
-func (a *Analyzer) collectMemoryStats(stat *runtime.MemStats) *MemStats {
+func (a *Analyzer) collectMemoryStats(stat runtime.MemStats) *MemStats {
 	return &MemStats{
 		Alloc:       stat.Alloc,
 		TotalAlloc:  stat.TotalAlloc,
@@ -50,7 +50,7 @@ func (a *Analyzer) collectMemoryStats(stat *runtime.MemStats) *MemStats {
 	}
 }
 
-func (a *Analyzer) collectGCStats(stat *runtime.MemStats) *GCStats {
+func (a *Analyzer) collectGCStats(stat runtime.MemStats) *GCStats {
 	res := &GCStats{
 		NumGC:         stat.NumGC,
 		NumForcedGC:   stat.NumForcedGC,
@@ -66,7 +66,7 @@ func (a *Analyzer) collectGCStats(stat *runtime.MemStats) *GCStats {
 	return res
 }
 
-func (a *Analyzer) collectAllocationStats(stat *runtime.MemStats) *AllocationStats {
+func (a *Analyzer) collectAllocationStats(stat runtime.MemStats) *AllocationStats {
 	return &AllocationStats{
 		Mallocs:     stat.Mallocs,
 		Frees:       stat.Frees,

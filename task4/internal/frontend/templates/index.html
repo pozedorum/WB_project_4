@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Go Metrics Dashboard</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
+
 <body>
     <div class="container">
         <!-- Header -->
@@ -74,17 +76,14 @@
         <!-- Results Section -->
         <div class="results-section">
             <div class="section-header">
-                <h2>📋 Results</h2>
+                <h2>📋 Report</h2>
                 <div class="controls">
-                    <button class="btn btn-sm" onclick="toggleAllSections()" id="toggleAllBtn">
-                        Expand All
-                    </button>
                     <button class="btn btn-sm" onclick="copyToClipboard()">
                         Copy JSON
                     </button>
                 </div>
             </div>
-            
+
             <div id="results">
                 <div class="empty-state">
                     <div class="empty-icon">📊</div>
@@ -98,6 +97,7 @@
         <div id="timestamp" class="timestamp"></div>
     </div>
 
-    <script src="/static/js/scripts.js"></script>
+    <script src="/static/scripts.js"></script>
 </body>
+
 </html>
