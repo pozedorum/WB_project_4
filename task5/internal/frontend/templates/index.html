@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="url"], input[type="text"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="url"]:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .optional {
+            color: #666;
+            font-style: italic;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .links {
+            margin-top: 30px;
+        }
+        .links a {
+            color: #667eea;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        .short-url {
+            color: #667eea;
+            font-weight: bold;
+            word-break: break-all;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 URL Shortener</h1>
+        
+        <form id="shorten-form">
+            <div class="form-group">
+                <label for="original-url">Original URL *</label>
+                <input type="url" id="original-url" name="url" placeholder="https://example.com" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="custom-code">Custom Short Code <span class="optional">(optional, 1-6 characters)</span></label>
+                <input type="text" id="custom-code" name="custom_code" placeholder="my-link" 
+                       pattern="[a-zA-Z0-9]{1,6}" title="1-6 alphanumeric characters">
+            </div>
+            
+            <button type="submit">Shorten URL</button>
+        </form>
+
+        <div id="error" class="error"></div>
+        <div id="result"></div>
+
+        <div class="links">
+            <a href="/analytics-page">View Analytics</a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('shorten-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Скрываем предыдущие сообщения
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('result').style.display = 'none';
+            
+            const formData = new FormData(this);
+            const url = formData.get('url');
+            const customCode = formData.get('custom_code');
+            
+            try {
+                const requestBody = { url: url };
+                if (customCode) {
+                    requestBody.custom_code = customCode;
+                }
+                
+                const response = await fetch('/shorten', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const resultDiv = document.getElementById('result');
+                    
+                    resultDiv.innerHTML = `
+                        <p>Short URL created successfully!</p>
+                        <p>Original: <a href="${data.original_url}" target="_blank">${data.original_url}</a></p>
+                        <p>Short: <a href="${data.short_url}" target="_blank" class="short-url">${window.location.origin}${data.short_url}</a></p>
+                        <button onclick="copyToClipboard('${window.location.origin}${data.short_url}')">Copy Short URL</button>
+                    `;
+                    resultDiv.style.display = 'block';
+                    
+                    // Очищаем форму
+                    this.reset();
+                } else {
+                    // Показываем ошибку
+                    const errorDiv = document.getElementById('error');
+                    errorDiv.textContent = data.error || 'Error creating short URL';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                const errorDiv = document.getElementById('error');
+                errorDiv.textContent = 'Error: ' + error.message;
+                errorDiv.style.display = 'block';
+            }
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        // Валидация кастомного кода
+        document.getElementById('custom-code').addEventListener('input', function(e) {
+            const value = e.target.value;
+            if (value.length > 6) {
+                e.target.value = value.slice(0, 6);
+            }
+            // Убираем не-алфавитно-цифровые символы
+            e.target.value = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+        });
+    </script>
+</body>
+</html>
