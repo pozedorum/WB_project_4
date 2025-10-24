@@ -130,7 +130,7 @@ url-shortener/
 │   ├── postgres/        # Репозиторий PostgreSQL
 │   └── models/          # Модели данных
 ├── web/                 # Веб-интерфейс (HTML/JS)
-├── docker-compose.yml
+├── docker compose.yml
 ├── Dockerfile
 └── Makefile
 ```

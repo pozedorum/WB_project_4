@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,18 +19,20 @@ import (
 	"github.com/pozedorum/wbf/dbpg"
 	"github.com/pozedorum/wbf/ginext"
 	"github.com/pozedorum/wbf/zlog"
+	"github.com/rs/zerolog"
 )
 
 func main() {
 	zlog.Init()
+	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 	// Настройки памяти для профилирования
 	runtime.MemProfileRate = 1
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
 
+	startPProfServer()
 	// Отключаем логирование Gin, для нагрузочного тестирования
 	gin.SetMode(gin.ReleaseMode)
-
 	cfg := config.Load()
 	zlog.Logger.Info().Interface("config", cfg).Msg("Configuration loaded")
 
@@ -87,4 +91,36 @@ func main() {
 	} else {
 		zlog.Logger.Info().Msg("HTTP server stopped gracefully")
 	}
+}
+
+func startPProfServer() {
+	// Создаем отдельный mux и РУЧНО регистрируем pprof handlers
+	pprofMux := http.NewServeMux()
+
+	// Регистрируем ВСЕ pprof handlers вручную
+	pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
+	pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+
+	// Регистрируем отдельные профили
+	pprofMux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	pprofMux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	pprofMux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	pprofMux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	pprofMux.Handle("/debug/pprof/block", pprof.Handler("block"))
+	pprofMux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+
+	server := &http.Server{
+		Addr:    ":6060",
+		Handler: pprofMux,
+	}
+
+	go func() {
+		log.Printf("Starting pprof server on :6060")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("pprof server error: %v", err)
+		}
+	}()
 }

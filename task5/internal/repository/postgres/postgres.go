@@ -47,24 +47,17 @@ func (sr *ShortURLRepository) CreateShortURL(ctx context.Context, n *models.Shor
 }
 
 func (sr *ShortURLRepository) RegisterClick(ctx context.Context, click *models.ClickAnalyticsEntry) error {
-	// Парсим User-Agent для детальной аналитики
 	userAgentInfo := utils.ParseUserAgent(click.UserAgent)
 
-	// Начинаем транзакцию с контекстом
 	tx, err := sr.db.Master.BeginTx(ctx, nil)
 	if err != nil {
 		zlog.Logger.Error().Err(err).Msg("Failed to begin transaction")
 		return fmt.Errorf("failed to start transaction: %w", err)
 	}
-	defer func() {
-		if err := tx.Rollback(); err != nil {
-			zlog.Logger.Error().Err(err).Msg("Failed to end transaction")
-		}
-	}()
-	// Запрос для вставки данных о клике
-	// ВАЖНО: Используем только базовые поля, которые есть в таблице из миграции 001
+
+	// Выполняем операции в транзакции
 	query := `INSERT INTO url_clicks 
-        (short_url_id, user_agent,ip_address, created_at) 
+        (short_url_id, user_agent, ip_address, created_at) 
         SELECT id, $2, $3, $4
         FROM short_urls WHERE short_code = $1
         RETURNING short_url_id`
@@ -76,8 +69,9 @@ func (sr *ShortURLRepository) RegisterClick(ctx context.Context, click *models.C
 		click.IPAddress,
 		click.CreatedAt,
 	).Scan(&shortURLID)
-	// Обрабатываем ошибку
+
 	if err != nil {
+		tx.Rollback()
 		if errors.Is(err, sql.ErrNoRows) {
 			zlog.Logger.Warn().Str("short_code", click.ShortCode).Msg("Attempted to register click for non-existent short code")
 			return models.ErrShortURLNotFound
@@ -92,6 +86,7 @@ func (sr *ShortURLRepository) RegisterClick(ctx context.Context, click *models.C
 		shortURLID,
 	)
 	if err != nil {
+		tx.Rollback()
 		zlog.Logger.Error().Err(err).Int("url_id", shortURLID).Msg("Failed to update click count")
 		return fmt.Errorf("database error on count update: %w", err)
 	}
@@ -102,7 +97,6 @@ func (sr *ShortURLRepository) RegisterClick(ctx context.Context, click *models.C
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	// Логируем аналитику (данные есть в userAgentInfo, но не сохраняем в БД)
 	zlog.Logger.Debug().
 		Int("url_id", shortURLID).
 		Str("short_code", click.ShortCode).
