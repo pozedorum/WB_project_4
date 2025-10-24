@@ -16,7 +16,7 @@ func New(service *service.ShortURLService) *ShortURLServer {
 }
 
 func (ss *ShortURLServer) SetupRoutes(router *ginext.RouterGroup) {
-	router.Use(ginext.Logger())
+	// router.Use(ginext.Logger())
 	router.Use(ginext.Recovery())
 
 	// Фронтенд роуты

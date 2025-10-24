@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pozedorum/WB_project_4/task5/internal/config"
 	"github.com/pozedorum/WB_project_4/task5/internal/repository/postgres"
 	"github.com/pozedorum/WB_project_4/task5/internal/server"
@@ -19,6 +21,13 @@ import (
 
 func main() {
 	zlog.Init()
+	// Настройки памяти для профилирования
+	runtime.MemProfileRate = 1
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
+
+	// Отключаем логирование Gin, для нагрузочного тестирования
+	gin.SetMode(gin.ReleaseMode)
 
 	cfg := config.Load()
 	zlog.Logger.Info().Interface("config", cfg).Msg("Configuration loaded")
@@ -45,7 +54,9 @@ func main() {
 	router := ginext.New()
 	router.LoadHTMLGlob("internal/frontend/templates/*.html")
 	apiGroup := router.Group("")
+	pprofGroup := router.Group("/debug/pprof")
 	server.SetupRoutes(apiGroup)
+	server.EnableProfiling(pprofGroup)
 
 	// Запуск HTTP сервера в горутине
 	serverAddr := ":" + cfg.Server.Port
