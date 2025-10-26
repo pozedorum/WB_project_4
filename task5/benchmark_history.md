@@ -7,6 +7,22 @@ BenchmarkGenerateShortURL-8     10018942               584.0 ns/op           144
 PASS
 ok      github.com/pozedorum/WB_project_4/task5/benchmarks      26.651s
 
+=== Load Test: URL Shortening ===
+Duration: 936.875309ms
+Requests: 1000
+Success: 1000
+Errors: 0
+RPS: 1067.38
+Avg Latency: 81.97 ms
+
+=== Load Test: URL Redirects ===
+Duration: 2.056715961s
+Requests: 2000
+Success: 2000
+Errors: 0
+RPS: 972.42
+Avg Latency: 47.76 ms
+
 
 ## Анализ функций через pprof
 bash scripts/profile_local.sh

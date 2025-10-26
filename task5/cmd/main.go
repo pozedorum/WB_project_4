@@ -30,7 +30,7 @@ func main() {
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
 
-	startPProfServer()
+	//startPProfServer()
 	// Отключаем логирование Gin, для нагрузочного тестирования
 	gin.SetMode(gin.ReleaseMode)
 	cfg := config.Load()
