@@ -52,8 +52,18 @@ profile-docker-trace:
 	./scripts/profile_docker_trace.sh
 
 # Запуск всех тестов профилирования
-profile-all: profile-docker-cpu profile-docker-mem profile-docker-trace
-analyze-all: analyze-cpu analyze-mem #analyze-trace
+
+profile-local:  clean
+	bash scripts/profile_local.sh
+
+analyze-local: analyze-cpu analyze-mem #analyze-trace
+
+profile-docker: profile-docker-cpu profile-docker-mem profile-docker-trace
+analyze-docker:
+	bash scripts/analyze_docker_pprof.sh
+
+
+
 
 # Нагрузочное тестирование (требует запущенного Docker)
 load-test-docker:
