@@ -26,7 +26,8 @@ logs:
 clean:
 	docker compose down -v
 	rm -f url-shortener pprof/*
-	rm -f *.pprof 
+	rm -f *.pprof
+	bash scripts/free_ports.sh
 
 migrate:
 	docker compose exec postgres psql -U postgres -d delayed_notifier -f /docker-entrypoint-initdb.d/init.sql
@@ -35,6 +36,15 @@ migrate:
 # Бенчмарки
 bench:
 	go test -bench=. -benchmem -benchtime=5s ./benchmarks/...
+
+# Запуск всех тестов профилирования
+profile-local:  clean
+	bash scripts/profile_local.sh
+analyze-local: analyze-cpu analyze-mem #analyze-trace
+
+profile-docker: profile-docker-cpu profile-docker-mem profile-docker-trace
+analyze-docker:
+	bash scripts/analyze_docker_pprof.sh
 
 # Docker CPU профилирование
 profile-docker-cpu:
@@ -51,9 +61,7 @@ profile-docker-trace:
 	chmod +x scripts/profile_docker_trace.sh
 	./scripts/profile_docker_trace.sh
 
-# Запуск всех тестов профилирования
-profile-all: profile-docker-cpu profile-docker-mem profile-docker-trace
-analyze-all: analyze-cpu analyze-mem #analyze-trace
+
 
 # Нагрузочное тестирование (требует запущенного Docker)
 load-test-docker:

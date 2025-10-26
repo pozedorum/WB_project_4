@@ -49,57 +49,43 @@ func (sr *ShortURLRepository) CreateShortURL(ctx context.Context, n *models.Shor
 func (sr *ShortURLRepository) RegisterClick(ctx context.Context, click *models.ClickAnalyticsEntry) error {
 	userAgentInfo := utils.ParseUserAgent(click.UserAgent)
 
-	tx, err := sr.db.Master.BeginTx(ctx, nil)
-	if err != nil {
-		zlog.Logger.Error().Err(err).Msg("Failed to begin transaction")
-		return fmt.Errorf("failed to start transaction: %w", err)
-	}
-
-	// Выполняем операции в транзакции
-	query := `INSERT INTO url_clicks 
-        (short_url_id, user_agent, ip_address, created_at) 
-        SELECT id, $2, $3, $4
-        FROM short_urls WHERE short_code = $1
-        RETURNING short_url_id`
+	// Один запрос вместо транзакции
+	query := `
+        WITH click_insert AS (
+            INSERT INTO url_clicks (short_url_id, user_agent, ip_address, created_at) 
+            SELECT id, $2, $3, $4
+            FROM short_urls 
+            WHERE short_code = $1
+            RETURNING short_url_id
+        )
+        UPDATE short_urls 
+        SET clicks_count = clicks_count + 1 
+        WHERE id = (SELECT short_url_id FROM click_insert)
+        RETURNING id, short_code
+    `
 
 	var shortURLID int
-	err = tx.QueryRowContext(ctx, query,
+	var shortCode string
+
+	err := sr.db.Master.QueryRowContext(ctx, query,
 		click.ShortCode,
 		click.UserAgent,
 		click.IPAddress,
 		click.CreatedAt,
-	).Scan(&shortURLID)
+	).Scan(&shortURLID, &shortCode)
 
 	if err != nil {
-		tx.Rollback()
 		if errors.Is(err, sql.ErrNoRows) {
 			zlog.Logger.Warn().Str("short_code", click.ShortCode).Msg("Attempted to register click for non-existent short code")
 			return models.ErrShortURLNotFound
 		}
-		zlog.Logger.Error().Err(err).Str("short_code", click.ShortCode).Msg("Failed to insert click analytics")
-		return fmt.Errorf("database error on click insert: %w", err)
-	}
-
-	// Обновляем счетчик кликов
-	_, err = tx.ExecContext(ctx,
-		"UPDATE short_urls SET clicks_count = clicks_count + 1 WHERE id = $1",
-		shortURLID,
-	)
-	if err != nil {
-		tx.Rollback()
-		zlog.Logger.Error().Err(err).Int("url_id", shortURLID).Msg("Failed to update click count")
-		return fmt.Errorf("database error on count update: %w", err)
-	}
-
-	// Коммитим транзакцию
-	if err := tx.Commit(); err != nil {
-		zlog.Logger.Error().Err(err).Msg("Failed to commit transaction for click registration")
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		zlog.Logger.Error().Err(err).Str("short_code", click.ShortCode).Msg("Failed to register click")
+		return fmt.Errorf("database error on click registration: %w", err)
 	}
 
 	zlog.Logger.Debug().
 		Int("url_id", shortURLID).
-		Str("short_code", click.ShortCode).
+		Str("short_code", shortCode).
 		Str("browser", userAgentInfo.Browser).
 		Str("os", userAgentInfo.OS).
 		Str("device", userAgentInfo.Device).
@@ -447,5 +433,76 @@ func (sr *ShortURLRepository) Close() {
 	zlog.Logger.Info().Msg("PostgreSQL connections closed")
 }
 
+func (sr *ShortURLRepository) BatchRegisterClicks(ctx context.Context, clicks []models.ClickTask) error {
+	if len(clicks) == 0 {
+		return nil
+	}
+
+	tx, err := sr.db.Master.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Создаем временную таблицу
+	if _, err := tx.ExecContext(ctx, `
+        CREATE TEMPORARY TABLE temp_clicks (
+            short_code TEXT,
+            user_agent TEXT,
+            ip_address TEXT,
+            created_at TIMESTAMP
+        ) ON COMMIT DROP
+    `); err != nil {
+		return fmt.Errorf("failed to create temp table: %w", err)
+	}
+
+	// Пакетно вставляем во временную таблицу
+	tempStmt, err := tx.PrepareContext(ctx, `
+        INSERT INTO temp_clicks (short_code, user_agent, ip_address, created_at) 
+        VALUES ($1, $2, $3, $4)
+    `)
+	if err != nil {
+		return fmt.Errorf("failed to prepare temp insert: %w", err)
+	}
+	defer tempStmt.Close()
+
+	for _, click := range clicks {
+		if _, err := tempStmt.ExecContext(ctx, click.ShortCode, click.UserAgent, click.IPAddress, click.CreatedAt); err != nil {
+			return fmt.Errorf("failed to insert into temp table: %w", err)
+		}
+	}
+
+	// Одним запросом обновляем счетчики - ИСПРАВЛЕННАЯ ВЕРСИЯ
+	if _, err := tx.ExecContext(ctx, `
+        UPDATE short_urls 
+        SET clicks_count = short_urls.clicks_count + sub.clicks_count
+        FROM (
+            SELECT short_code, COUNT(*) as clicks_count
+            FROM temp_clicks 
+            GROUP BY short_code
+        ) AS sub
+        WHERE short_urls.short_code = sub.short_code
+    `); err != nil {
+		return fmt.Errorf("failed to update click counts: %w", err)
+	}
+
+	// Одним запросом вставляем клики
+	if _, err := tx.ExecContext(ctx, `
+        INSERT INTO url_clicks (short_url_id, user_agent, ip_address, created_at)
+        SELECT su.id, tc.user_agent, tc.ip_address, tc.created_at
+        FROM temp_clicks tc
+        JOIN short_urls su ON tc.short_code = su.short_code
+    `); err != nil {
+		return fmt.Errorf("failed to insert clicks: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	zlog.Logger.Debug().Int("clicks", len(clicks)).Msg("Batch clicks processed via temp table")
+	return nil
+}
+
 // Implement Repository interface
-// var _ service.Repository = (*ShortURLRepository)(nil)
+//var _ service.Repository = (*ShortURLRepository)(nil)

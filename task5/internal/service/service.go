@@ -18,12 +18,15 @@ const (
 )
 
 type ShortURLService struct {
-	repo Repository
+	repo         Repository
+	clickBatcher *ClickBatcher
 }
 
 func New(repo Repository) *ShortURLService {
 	zlog.Logger.Info().Msg("Creating short url service")
-	return &ShortURLService{repo: repo}
+	batcher := NewClickBatcher(repo, 100, 1*time.Second)
+	batcher.Start()
+	return &ShortURLService{repo: repo, clickBatcher: batcher}
 }
 
 func (s *ShortURLService) CreateShortURL(ctx context.Context, originalURL string, customCode string) (*models.ShortURL, error) {
@@ -86,8 +89,13 @@ func (s *ShortURLService) CreateShortURL(ctx context.Context, originalURL string
 	return shortURL, nil
 }
 
+func (s *ShortURLService) Stop() {
+	s.clickBatcher.Stop()
+	zlog.Logger.Info().Msg("Click batcher stopped")
+}
+
 func (s *ShortURLService) Redirect(ctx context.Context, shortCode string, userAgent, ip string) (string, error) {
-	// Получаем полную информацию атомарно
+	// Синхронно получаем URL для редиректа
 	shortURL, err := s.repo.GetOriginalURLIfExists(ctx, shortCode)
 	if err != nil {
 		if errors.Is(err, models.ErrShortURLNotFound) {
@@ -96,22 +104,26 @@ func (s *ShortURLService) Redirect(ctx context.Context, shortCode string, userAg
 		return "", err
 	}
 
-	// Запись аналитики (асинхронно или в горутине чтобы не блокировать редирект)
-	go func() {
-		clickStruct := models.ClickAnalyticsEntry{
-			ShortCode: shortCode,
-			UserAgent: userAgent,
-			IPAddress: ip,
-			CreatedAt: time.Now(),
-		}
-		if err := s.repo.RegisterClick(context.Background(), &clickStruct); err != nil {
-			zlog.Logger.Error().Err(err).Str("short_code", shortCode).Msg("Failed to register click")
-		}
-	}()
-	zlog.Logger.Info().Str("short_code", shortCode).Str("original_url", shortURL.OriginalURL).Msg("serive layer")
+	// Асинхронно добавляем клик в батчер (не блокирует ответ)
+	clickTask := models.ClickTask{
+		ShortCode: shortCode,
+		UserAgent: userAgent,
+		IPAddress: ip,
+		CreatedAt: time.Now(),
+	}
+
+	if !s.clickBatcher.AddClick(clickTask) {
+		// Логируем только если очередь переполнена, но не прерываем редирект
+		zlog.Logger.Warn().Str("short_code", shortCode).Msg("Click queue full, analytics skipped")
+	}
+
+	zlog.Logger.Debug().
+		Str("short_code", shortCode).
+		Str("original_url", shortURL.OriginalURL).
+		Msg("Redirect processed")
+
 	return shortURL.OriginalURL, nil
 }
-
 func (s *ShortURLService) GetStatByShortCode(ctx context.Context, shortCode string, period string, groupBy string) (*models.AnalyticsResponse, error) {
 	// Проверяем существование ссылки
 	_, err := s.repo.GetOriginalURLIfExists(ctx, shortCode)

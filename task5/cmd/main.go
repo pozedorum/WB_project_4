@@ -30,15 +30,15 @@ func main() {
 	runtime.SetMutexProfileFraction(1)
 	runtime.SetBlockProfileRate(1)
 
-	startPProfServer()
+	//startPProfServer()
 	// Отключаем логирование Gin, для нагрузочного тестирования
 	gin.SetMode(gin.ReleaseMode)
 	cfg := config.Load()
 	zlog.Logger.Info().Interface("config", cfg).Msg("Configuration loaded")
 
 	opts := &dbpg.Options{
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
+		MaxOpenConns:    50,
+		MaxIdleConns:    20,
 		ConnMaxLifetime: time.Hour,
 	}
 
@@ -82,6 +82,8 @@ func main() {
 	<-quit
 	zlog.Logger.Info().Msg("Shutting down server...")
 
+	zlog.Logger.Info().Msg("Stopping click batcher...")
+	shortURLService.Stop()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -1,0 +1,34 @@
+=== CPU - All Project Functions ===
+     0.01s 0.097% 85.02%      2.72s 26.28%  github.com/pozedorum/WB_project_4/task5/internal/server.(*ShortURLServer).Redirect
+     0.01s 0.097% 85.12%      2.09s 20.19%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).Redirect
+         0     0% 87.73%      0.64s  6.18%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).CreateShortURL
+         0     0% 87.73%      3.04s 29.37%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).GetOriginalURLIfExists
+         0     0% 87.73%      2.40s 23.19%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).RegisterClick
+         0     0% 87.73%      2.25s 21.74%  github.com/pozedorum/WB_project_4/task5/internal/server.(*ShortURLServer).Shorten
+         0     0% 87.73%      1.86s 17.97%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).CreateShortURL
+         0     0% 87.73%      2.42s 23.38%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).Redirect.func1
+         0     0% 87.73%      1.07s 10.34%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).ensureUniqueShortCode
+         0     0% 87.73%      0.07s  0.68%  github.com/pozedorum/WB_project_4/task5/internal/utils.ExtractBrowser
+         0     0% 87.73%      0.09s  0.87%  github.com/pozedorum/WB_project_4/task5/internal/utils.GenerateShortURL
+         0     0% 87.73%      0.11s  1.06%  github.com/pozedorum/WB_project_4/task5/internal/utils.ParseUserAgent
+
+=== Memory - All Project Functions ===
+    4.50kB  0.33% 89.85%    25.80kB  1.87%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).Redirect.func1
+    4.48kB  0.32% 90.17%   134.08kB  9.71%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).GetOriginalURLIfExists
+    0.61kB 0.044% 90.76%    21.30kB  1.54%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).RegisterClick
+    0.19kB 0.014% 90.88%    63.52kB  4.60%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).Redirect
+         0     0% 90.92%    91.69kB  6.64%  github.com/pozedorum/WB_project_4/task5/internal/server.(*ShortURLServer).Redirect
+         0     0% 90.92%    89.77kB  6.50%  github.com/pozedorum/WB_project_4/task5/internal/server.(*ShortURLServer).Shorten
+         0     0% 90.92%    71.91kB  5.21%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).CreateShortURL
+         0     0% 90.92%    64.73kB  4.69%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).ensureUniqueShortCode
+
+=== Memory Growth - Project Functions ===
+    4.50kB  0.33% 69.58%    25.80kB  1.87%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).Redirect.func1
+    4.48kB  0.32% 69.91%   134.08kB  9.70%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).GetOriginalURLIfExists
+    0.61kB 0.044% 70.66%    21.30kB  1.54%  github.com/pozedorum/WB_project_4/task5/internal/repository/postgres.(*ShortURLRepository).RegisterClick
+   -0.19kB 0.014% 70.76%   -42.37kB  3.07%  github.com/pozedorum/WB_project_4/task5/internal/config.Load
+    0.19kB 0.014% 70.77%    63.52kB  4.60%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).Redirect
+         0     0% 70.77%    91.69kB  6.63%  github.com/pozedorum/WB_project_4/task5/internal/server.(*ShortURLServer).Redirect
+         0     0% 70.77%    89.77kB  6.50%  github.com/pozedorum/WB_project_4/task5/internal/server.(*ShortURLServer).Shorten
+         0     0% 70.77%    71.91kB  5.20%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).CreateShortURL
+         0     0% 70.77%    64.73kB  4.68%  github.com/pozedorum/WB_project_4/task5/internal/service.(*ShortURLService).ensureUniqueShortCode

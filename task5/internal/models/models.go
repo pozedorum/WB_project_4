@@ -81,6 +81,13 @@ type TimeSeriesStat struct {
 	Clicks    int64     `json:"clicks"`
 }
 
+type ClickTask struct {
+	ShortCode string
+	UserAgent string
+	IPAddress string
+	CreatedAt time.Time
+}
+
 var (
 	StandardStrategy = retry.Strategy{Attempts: 3, Delay: time.Second}
 	ConsumerStrategy = retry.Strategy{Attempts: 5, Delay: 2 * time.Second}

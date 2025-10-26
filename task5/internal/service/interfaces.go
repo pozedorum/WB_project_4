@@ -12,4 +12,5 @@ type Repository interface {
 	GetOriginalURLIfExists(ctx context.Context, shortCode string) (*models.ShortURL, error)
 	GetStatisticsByShortCode(ctx context.Context, shortCode string, period string, groupBy string) (*models.AnalyticsResponse, error)
 	RegisterClick(ctx context.Context, click *models.ClickAnalyticsEntry) error
+	BatchRegisterClicks(ctx context.Context, clicks []models.ClickTask) error
 }
